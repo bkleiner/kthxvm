@@ -1,0 +1,108 @@
+#pragma once
+
+/* CR0 bits */
+#define CR0_PE 1u
+#define CR0_MP (1u << 1)
+#define CR0_EM (1u << 2)
+#define CR0_TS (1u << 3)
+#define CR0_ET (1u << 4)
+#define CR0_NE (1u << 5)
+#define CR0_WP (1u << 16)
+#define CR0_AM (1u << 18)
+#define CR0_NW (1u << 29)
+#define CR0_CD (1u << 30)
+#define CR0_PG (1u << 31)
+
+/* CR4 bits */
+#define CR4_VME 1u
+#define CR4_PVI (1u << 1)
+#define CR4_TSD (1u << 2)
+#define CR4_DE (1u << 3)
+#define CR4_PSE (1u << 4)
+#define CR4_PAE (1u << 5)
+#define CR4_MCE (1u << 6)
+#define CR4_PGE (1u << 7)
+#define CR4_PCE (1u << 8)
+#define CR4_OSFXSR (1u << 9)
+#define CR4_OSXMMEXCPT (1u << 10)
+#define CR4_UMIP (1u << 11)
+#define CR4_VMXE (1u << 13)
+#define CR4_SMXE (1u << 14)
+#define CR4_FSGSBASE (1u << 16)
+#define CR4_PCIDE (1u << 17)
+#define CR4_OSXSAVE (1u << 18)
+#define CR4_SMEP (1u << 20)
+#define CR4_SMAP (1u << 21)
+#define CR4_PKE (1u << 22)
+
+#define EFER_SCE 1
+#define EFER_LME (1 << 8)
+#define EFER_LMA (1 << 10)
+#define EFER_NXE (1 << 11)
+#define EFER_SVME (1 << 12)
+#define EFER_LMSLE (1 << 13)
+#define EFER_FFXSR (1 << 14)
+#define EFER_TCE (1 << 15)
+
+/* 64-bit page * entry bits */
+#define PDE64_PRESENT 0x1
+#define PDE64_RW 0x2
+#define PDE64_USER 0x4
+#define PDE64_ACCESSED 0x20
+#define PDE64_DIRTY 0x40
+#define PDE64_PS 0x80
+#define PDE64_G 0x100
+
+#define MSR_EFER 0xc0000080           /* extended feature register */
+#define MSR_STAR 0xc0000081           /* legacy mode SYSCALL target */
+#define MSR_LSTAR 0xc0000082          /* long mode SYSCALL target */
+#define MSR_CSTAR 0xc0000083          /* compat mode SYSCALL target */
+#define MSR_SYSCALL_MASK 0xc0000084   /* EFLAGS mask for syscall */
+#define MSR_FS_BASE 0xc0000100        /* 64bit FS base */
+#define MSR_GS_BASE 0xc0000101        /* 64bit GS base */
+#define MSR_KERNEL_GS_BASE 0xc0000102 /* SwapGS GS shadow */
+#define MSR_TSC_AUX 0xc0000103        /* Auxiliary TSC */
+
+#define MSR_IA32_SYSENTER_CS 0x00000174
+#define MSR_IA32_SYSENTER_ESP 0x00000175
+#define MSR_IA32_SYSENTER_EIP 0x00000176
+
+/* Intel defined MSRs. */
+#define MSR_IA32_P5_MC_ADDR 0x00000000
+#define MSR_IA32_P5_MC_TYPE 0x00000001
+#define MSR_IA32_TSC 0x00000010
+#define MSR_IA32_PLATFORM_ID 0x00000017
+#define MSR_IA32_EBL_CR_POWERON 0x0000002a
+#define MSR_EBC_FREQUENCY_ID 0x0000002c
+#define MSR_SMI_COUNT 0x00000034
+#define MSR_IA32_FEATURE_CONTROL 0x0000003a
+#define MSR_IA32_TSC_ADJUST 0x0000003b
+#define MSR_IA32_BNDCFGS 0x00000d90
+
+#define MSR_IA32_MISC_ENABLE 0x000001a0
+
+/* MISC_ENABLE bits: architectural */
+#define MSR_IA32_MISC_ENABLE_FAST_STRING_BIT 0
+#define MSR_IA32_MISC_ENABLE_FAST_STRING (1ULL << MSR_IA32_MISC_ENABLE_FAST_STRING_BIT)
+#define MSR_IA32_MISC_ENABLE_TCC_BIT 1
+#define MSR_IA32_MISC_ENABLE_TCC (1ULL << MSR_IA32_MISC_ENABLE_TCC_BIT)
+#define MSR_IA32_MISC_ENABLE_EMON_BIT 7
+#define MSR_IA32_MISC_ENABLE_EMON (1ULL << MSR_IA32_MISC_ENABLE_EMON_BIT)
+#define MSR_IA32_MISC_ENABLE_BTS_UNAVAIL_BIT 11
+#define MSR_IA32_MISC_ENABLE_BTS_UNAVAIL (1ULL << MSR_IA32_MISC_ENABLE_BTS_UNAVAIL_BIT)
+#define MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL_BIT 12
+#define MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL (1ULL << MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL_BIT)
+#define MSR_IA32_MISC_ENABLE_ENHANCED_SPEEDSTEP_BIT 16
+#define MSR_IA32_MISC_ENABLE_ENHANCED_SPEEDSTEP (1ULL << MSR_IA32_MISC_ENABLE_ENHANCED_SPEEDSTEP_BIT)
+#define MSR_IA32_MISC_ENABLE_MWAIT_BIT 18
+#define MSR_IA32_MISC_ENABLE_MWAIT (1ULL << MSR_IA32_MISC_ENABLE_MWAIT_BIT)
+#define MSR_IA32_MISC_ENABLE_LIMIT_CPUID_BIT 22
+#define MSR_IA32_MISC_ENABLE_LIMIT_CPUID (1ULL << MSR_IA32_MISC_ENABLE_LIMIT_CPUID_BIT)
+#define MSR_IA32_MISC_ENABLE_XTPR_DISABLE_BIT 23
+#define MSR_IA32_MISC_ENABLE_XTPR_DISABLE (1ULL << MSR_IA32_MISC_ENABLE_XTPR_DISABLE_BIT)
+#define MSR_IA32_MISC_ENABLE_XD_DISABLE_BIT 34
+#define MSR_IA32_MISC_ENABLE_XD_DISABLE (1ULL << MSR_IA32_MISC_ENABLE_XD_DISABLE_BIT)
+
+#define PS_LIMIT (0x200000)
+#define KERNEL_STACK_SIZE (0x4000)
+#define MAX_KERNEL_SIZE (PS_LIMIT - 0x5000 - KERNEL_STACK_SIZE)

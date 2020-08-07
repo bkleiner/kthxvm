@@ -1,0 +1,9 @@
+/.vscode
+/build
+/guest/vmlinux
+
+*.o
+*.elf
+*.img
+
+kthxvm
