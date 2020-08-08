@@ -202,6 +202,11 @@ namespace kvm {
         ioctl_err("KVM_IRQ_LINE");
     }
 
+    void trigger_interrupt(__u32 num) {
+      send_interrupt(num, true);
+      send_interrupt(num, false);
+    }
+
     void enable(__u32 cap) {
       struct kvm_enable_cap enable {
         cap : cap,
@@ -235,13 +240,14 @@ namespace kvm {
           }
 
           fmt::print(
-              "kvm::vcpu::io {} port {:#x} offset {:#x} size {} ({})\n",
+              "kvm::vcpu::io {} port {:#x} offset {:#x} size {} ({}) value {:#x}\n",
               kvm_run->io.direction == KVM_EXIT_IO_IN ? "in" : "out",
               kvm_run->io.port,
               kvm_run->io.data_offset,
               kvm_run->io.size,
-              kvm_run->io.count);
-          fmt::print("kvm::vcpu::io value {:#x}\n", *((char *)kvm_run + kvm_run->io.data_offset));
+              kvm_run->io.count,
+              *((char *)kvm_run + kvm_run->io.data_offset));
+
           break;
         case KVM_EXIT_MMIO: {
           if (!kvm_run->mmio.is_write) {
@@ -267,13 +273,15 @@ namespace kvm {
           fmt::print("got exist reason {} from kvm_run\n", kvm_run->exit_reason);
           return kvm_run->exit_reason;
         }
-      }
 
-      if (mmio.update(memory_ptr())) {
-        send_interrupt(7, true);
-        send_interrupt(7, false);
+        while (true) {
+          __u32 irq = mmio.update(memory_ptr());
+          if (irq == 0) {
+            break;
+          }
+          trigger_interrupt(irq);
+        }
       }
-
       return 1;
     }
 
@@ -289,7 +297,7 @@ namespace kvm {
         throw std::runtime_error("memory map failed");
       }
 
-      madvise(memory, mem, MADV_MERGEABLE);
+      // madvise(memory, mem, MADV_MERGEABLE);
 
       struct kvm_userspace_memory_region memreg {
         0,

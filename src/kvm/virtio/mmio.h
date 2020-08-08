@@ -19,7 +19,7 @@ namespace kvm::virtio {
     static constexpr __u32 VIRT_VENDOR = 0x4b544858; // 'KTHX'
 
     mmio()
-        : blk_dev("debian.ext4") {}
+        : blk_dev("guest/debian.ext4") {}
 
     std::vector<__u8> read_dev(device &dev, queue &q, __u64 offset, __u32 size) {
       std::vector<__u8> buf(size);
@@ -192,9 +192,16 @@ namespace kvm::virtio {
       }
     }
 
-    bool update(__u8 *ptr) {
-      rng_dev.update(rng_queue, ptr);
-      return blk_dev.interrupt_asserted = blk_dev.update(blk_queue, ptr);
+    __u32 update(__u8 *ptr) {
+      if (!blk_dev.interrupt_asserted && blk_dev.update(blk_queue, ptr)) {
+        blk_dev.interrupt_asserted = true;
+        return 7;
+      }
+      if (!rng_dev.interrupt_asserted && rng_dev.update(rng_queue, ptr)) {
+        rng_dev.interrupt_asserted = true;
+        return 8;
+      }
+      return 0;
     }
 
   private:

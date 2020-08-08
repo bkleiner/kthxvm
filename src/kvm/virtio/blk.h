@@ -73,11 +73,12 @@ namespace kvm::virtio {
 
       __u32 len = 0;
       __u32 desc_start = q.avail_id(ptr);
+
       req_header *hdr = reinterpret_cast<req_header *>(ptr + next->addr);
       switch (hdr->type) {
       case VIRTIO_BLK_T_IN: {
-        //fmt::print("kvm::virtio::blk read at {:#x}\n", hdr->sector * 512);
         next = &q.descriptors(ptr)->ring[next->next];
+        fmt::print("kvm::virtio::blk read at {:#x} ({})\n", hdr->sector * 512, next->len);
 
         file.seekg(hdr->sector * 512);
         file.read((char *)(ptr + next->addr), next->len);
@@ -90,11 +91,12 @@ namespace kvm::virtio {
       }
 
       case VIRTIO_BLK_T_OUT: {
-        //fmt::print("kvm::virtio::blk write at {:#x}\n", hdr->sector * 512);
         next = &q.descriptors(ptr)->ring[next->next];
+        fmt::print("kvm::virtio::blk write at {:#x} ({})\n", hdr->sector * 512, next->len);
 
         file.seekp(hdr->sector * 512);
         file.write((char *)(ptr + next->addr), next->len);
+        file.flush();
         len += next->len;
 
         next = &q.descriptors(ptr)->ring[next->next];
