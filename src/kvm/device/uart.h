@@ -63,6 +63,9 @@ namespace kvm {
 
         switch (offset) {
         case DATA:
+          for (__u8 i = 0; i < size; i++) {
+            buf[i] = getchar();
+          }
           break;
         case IIR: {
           auto v = registers[IIR] | IIR_FIFO_BITS;
