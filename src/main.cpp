@@ -2,6 +2,7 @@
 
 #include "kvm/apic.h"
 #include "kvm/cpuid.h"
+#include "kvm/irq.h"
 #include "kvm/msr.h"
 #include "kvm/regs.h"
 
@@ -24,7 +25,7 @@ int binary_load(char *memory, const std::string &filename) {
 }
 
 int main(int argc, char **argv) {
-  std::string cmdline = "console=uart,io,0x3f8 virtio_mmio.device=4K@0xd0000000:5 reboot=k panic=1 pci=off";
+  std::string cmdline = "console=uart,io,0x3f8 virtio_mmio.device=4K@0xd0000000:7 reboot=k panic=1 pci=off root=/dev/vda";
   __u64 memory_size = 1024 * 1024 * 1024;
 
   kvm::kvm kvm;
@@ -43,6 +44,7 @@ int main(int argc, char **argv) {
   kvm::setup_fpu(vm);
   kvm::setup_long_mode(vm);
   kvm::setup_lapic(vm);
+  kvm::setup_irq_routing(vm);
 
   struct boot_params *boot = reinterpret_cast<struct boot_params *>(vm.memory_ptr() + kvm::ZERO_PAGE_START);
   memset(boot, 0, sizeof(struct boot_params));

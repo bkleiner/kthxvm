@@ -16,7 +16,7 @@
 
 namespace kvm {
   void ioctl_err(std::string ctl) {
-    auto err = fmt::format("{}: {}", ctl, strerror(errno));
+    auto err = fmt::format("{}: {} ({})", ctl, strerror(errno), errno);
     throw std::runtime_error(err);
   }
 
@@ -181,12 +181,25 @@ namespace kvm {
       create_vcpu(k);
     }
 
-    char *memory_ptr() {
+    __u8 *memory_ptr() {
       return memory;
     }
 
     vcpu &get_vcpu() {
       return *cpu;
+    }
+
+    void set_gsi_routing(struct kvm_irq_routing *router) {
+      if (ioctl(fd, KVM_SET_GSI_ROUTING, router) < 0)
+        ioctl_err("KVM_SET_GSI_ROUTING");
+    }
+
+    void send_interrupt(__u32 num, bool level) {
+      struct kvm_irq_level irq;
+      irq.irq = num;
+      irq.level = level ? 1 : 0;
+      if (ioctl(fd, KVM_IRQ_LINE, &irq) < 0)
+        ioctl_err("KVM_IRQ_LINE");
     }
 
     void enable(__u32 cap) {
@@ -229,14 +242,19 @@ namespace kvm {
               kvm_run->io.count);
           fmt::print("kvm::vcpu::io value {:#x}\n", *((char *)kvm_run + kvm_run->io.data_offset));
           continue;
-        case KVM_EXIT_MMIO:
+        case KVM_EXIT_MMIO: {
           if (!kvm_run->mmio.is_write) {
             auto buf = mmio.read(kvm_run->mmio.phys_addr - 0xd0000000, kvm_run->mmio.len);
             memcpy(kvm_run->mmio.data, buf.data(), buf.size());
           } else {
             mmio.write(&kvm_run->mmio.data[0], kvm_run->mmio.phys_addr - 0xd0000000, kvm_run->mmio.len);
           }
+
+          send_interrupt(7, false);
+          if (mmio.update(memory_ptr()))
+            send_interrupt(7, true);
           continue;
+        }
         case KVM_EXIT_DEBUG:
           fmt::print(
               "kvm::vcpu::debug exception {} dr6 {:#x} dr7 {:#x} pc {:#x}\n",
@@ -258,7 +276,7 @@ namespace kvm {
 
   private:
     void create_memory(size_t mem) {
-      memory = reinterpret_cast<char *>(mmap(
+      memory = reinterpret_cast<__u8 *>(mmap(
           NULL,
           mem,
           PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
@@ -307,7 +325,7 @@ namespace kvm {
 
     int fd;
 
-    char *memory;
+    __u8 *memory;
     size_t memory_size;
 
     std::unique_ptr<vcpu> cpu;
