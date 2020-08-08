@@ -406,8 +406,8 @@ namespace kvm {
         unsigned int signature[3];
         memcpy(signature, "GenuineIntel", 12);
         e->ebx = signature[0];
-        e->ecx = signature[1];
-        e->edx = signature[2];
+        e->edx = signature[1];
+        e->ecx = signature[2];
         break;
       case 0x1: {
         // X86 hypervisor feature
