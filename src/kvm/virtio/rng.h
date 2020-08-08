@@ -14,6 +14,12 @@ namespace kvm::virtio {
 
   class rng : public device {
   public:
+    rng()
+        : file("/dev/random") {
+      if (!file.is_open())
+        throw std::runtime_error(fmt::format("could not open file {}", "/dev/random"));
+    }
+
     std::vector<__u8> read(__u64 offset, __u32 size) {
       std::vector<__u8> buf(size);
       fmt::print("kvm::virtio::rng invalid config read at {:#x}\n", offset);
@@ -45,9 +51,15 @@ namespace kvm::virtio {
       __u32 len = 0;
       __u32 desc_start = q.avail_id(ptr);
 
+      file.read((char *)(ptr + next->addr), next->len);
+      len += next->len;
+
       q.add_used(ptr, desc_start, len);
       return true;
     }
+
+  private:
+    std::ifstream file;
   };
 
 } // namespace kvm::virtio
