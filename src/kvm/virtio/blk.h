@@ -8,20 +8,11 @@
 #include <linux/virtio_blk.h>
 #include <linux/virtio_config.h>
 
-#include "queue.h"
+#include "device.h"
 
 namespace kvm::virtio {
-  enum device_status {
-    VIRTIO_DEVICE_RESET = 0,
-    VIRTIO_DEVICE_ACKNOWLEDGE = 1,
-    VIRTIO_DEVICE_DRIVER = 2,
-    VIRTIO_DEVICE_DRIVER_OK = 4,
-    VIRTIO_DEVICE_FEATURES_OK = 8,
-    VIRTIO_DEVICE_DEVICE_NEEDS_RESET = 64,
-    VIRTIO_DEVICE_FAILED = 128,
-  };
 
-  class blk {
+  class blk : public device {
   public:
     struct req_header {
       __u32 type;
@@ -36,7 +27,7 @@ namespace kvm::virtio {
         throw std::runtime_error(fmt::format("could not open file {}", filename));
 
       // 512 blocks
-      file.seekp(std::ios::end);
+      file.seekg(0, std::ios::end);
       config.capacity = file.tellg() / 512;
     }
 
@@ -62,12 +53,8 @@ namespace kvm::virtio {
       generation++;
     }
 
-    __u32 read_status() {
-      return status;
-    }
-
-    void write_status(__u32 update) {
-      status = update;
+    __u32 device_id() {
+      return VIRTIO_ID_BLOCK;
     }
 
     __u32 features() {
@@ -85,9 +72,11 @@ namespace kvm::virtio {
       }
 
       __u32 len = 0;
+      __u32 desc_start = q.avail_id(ptr);
       req_header *hdr = reinterpret_cast<req_header *>(ptr + next->addr);
       switch (hdr->type) {
       case VIRTIO_BLK_T_IN: {
+        //fmt::print("kvm::virtio::blk read at {:#x}\n", hdr->sector * 512);
         next = &q.descriptors(ptr)->ring[next->next];
 
         file.seekg(hdr->sector * 512);
@@ -101,9 +90,10 @@ namespace kvm::virtio {
       }
 
       case VIRTIO_BLK_T_OUT: {
+        //fmt::print("kvm::virtio::blk write at {:#x}\n", hdr->sector * 512);
         next = &q.descriptors(ptr)->ring[next->next];
 
-        file.seekg(hdr->sector * 512);
+        file.seekp(hdr->sector * 512);
         file.write((char *)(ptr + next->addr), next->len);
         len += next->len;
 
@@ -118,15 +108,12 @@ namespace kvm::virtio {
         break;
       }
 
-      q.used(ptr)->ring[q.used(ptr)->idx].len = len;
-      q.used(ptr)->ring[q.used(ptr)->idx].id = q.avail_id(ptr);
-      q.used(ptr)->idx++;
+      q.add_used(ptr, desc_start, len);
       return true;
     }
 
   private:
     std::fstream file;
-    __u8 status = VIRTIO_DEVICE_RESET;
 
     virtio_blk_config config;
     __u32 generation = 0;

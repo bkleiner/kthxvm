@@ -2,6 +2,8 @@
 
 #include <asm/types.h>
 
+#include "barrier.h"
+
 namespace kvm::virtio {
 
   class queue {
@@ -17,14 +19,14 @@ namespace kvm::virtio {
 
     struct descriptor_t {
       descriptor_elem_t ring[QUEUE_SIZE_MAX];
-    };
+    } __attribute__((aligned(16)));
 
     struct avail_t {
       __u16 flags;
       __u16 idx;
       __u16 ring[QUEUE_SIZE_MAX];
       __u16 used_event;
-    };
+    } __attribute__((aligned(2)));
 
     struct used_elem_t {
       __u32 id;
@@ -36,7 +38,7 @@ namespace kvm::virtio {
       __u16 idx;
       used_elem_t ring[QUEUE_SIZE_MAX];
       __u16 avail_event;
-    };
+    } __attribute__((aligned(4)));
 
     inline descriptor_t *descriptors(__u8 *ptr) {
       return reinterpret_cast<descriptor_t *>(ptr + desc_addr);
@@ -55,11 +57,20 @@ namespace kvm::virtio {
     }
 
     descriptor_elem_t *next(__u8 *ptr) {
+      rmb();
       if (!ready || avail(ptr)->idx <= last_avail) {
         return nullptr;
       }
       last_avail++;
       return &descriptors(ptr)->ring[avail_id(ptr)];
+    }
+
+    void add_used(__u8 *ptr, __u32 start, __u32 len) {
+      wmb();
+      used(ptr)->ring[used(ptr)->idx % size].len = len;
+      used(ptr)->ring[used(ptr)->idx % size].id = start;
+      used(ptr)->idx++;
+      wmb();
     }
 
   public:

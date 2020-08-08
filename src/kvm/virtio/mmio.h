@@ -9,7 +9,7 @@
 #include <linux/virtio_mmio.h>
 
 #include "blk.h"
-#include "queue.h"
+#include "rng.h"
 
 namespace kvm::virtio {
 
@@ -19,9 +19,9 @@ namespace kvm::virtio {
     static constexpr __u32 VIRT_VENDOR = 0x4b544858; // 'KTHX'
 
     mmio()
-        : dev("test.img") {}
+        : blk_dev("debian.ext4") {}
 
-    std::vector<__u8> read(__u64 offset, __u32 size) {
+    std::vector<__u8> read_dev(device &dev, queue &q, __u64 offset, __u32 size) {
       std::vector<__u8> buf(size);
       switch (offset) {
       case VIRTIO_MMIO_MAGIC_VALUE:
@@ -31,7 +31,7 @@ namespace kvm::virtio {
         *((__u32 *)buf.data()) = 2;
         break;
       case VIRTIO_MMIO_DEVICE_ID:
-        *((__u32 *)buf.data()) = VIRTIO_ID_BLOCK;
+        *((__u32 *)buf.data()) = dev.device_id();
         break;
       case VIRTIO_MMIO_VENDOR_ID:
         *((__u32 *)buf.data()) = VIRT_VENDOR;
@@ -43,7 +43,7 @@ namespace kvm::virtio {
 
       case VIRTIO_MMIO_DEVICE_FEATURES: {
         const __u64 features = __u64(dev.features()) | (1ul << VIRTIO_F_VERSION_1);
-        const __u32 shift = (device_feature_sel ? 32 : 0);
+        const __u32 shift = (dev.device_feature_sel ? 32 : 0);
 
         *((__u32 *)buf.data()) = (features >> shift) & 0xFFFFFF;
         break;
@@ -62,7 +62,7 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_INTERRUPT_STATUS:
-        *((__u32 *)buf.data()) = interrupt_asserted ? 0x1 : 0x0;
+        *((__u32 *)buf.data()) = dev.interrupt_asserted ? 0x1 : 0x0;
         break;
 
       case VIRTIO_MMIO_DEVICE_FEATURES_SEL:
@@ -93,11 +93,10 @@ namespace kvm::virtio {
       return buf;
     }
 
-    void write(__u8 *data, __u64 offset, __u32 size) {
+    void write_dev(device &dev, queue &q, __u8 *data, __u64 offset, __u32 size) {
       const __u32 value = *((__u32 *)data);
 
       switch (offset) {
-
       case VIRTIO_MMIO_MAGIC_VALUE:
       case VIRTIO_MMIO_VERSION:
       case VIRTIO_MMIO_DEVICE_ID:
@@ -114,17 +113,17 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_DEVICE_FEATURES_SEL:
-        device_feature_sel = value == 1;
+        dev.device_feature_sel = value == 1;
         break;
 
       case VIRTIO_MMIO_DRIVER_FEATURES: {
-        const __u32 shift = (driver_feature_sel ? 32 : 0);
-        driver_features |= (__u64(value) << shift);
+        const __u32 shift = (dev.driver_feature_sel ? 32 : 0);
+        dev.driver_features |= (__u64(value) << shift);
         break;
       }
 
       case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
-        driver_feature_sel = value == 1;
+        dev.driver_feature_sel = value == 1;
         break;
 
       case VIRTIO_MMIO_QUEUE_SEL:
@@ -163,7 +162,7 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_INTERRUPT_ACK:
-        interrupt_asserted = false;
+        dev.interrupt_asserted = false;
         break;
 
       default:
@@ -175,20 +174,35 @@ namespace kvm::virtio {
       }
     }
 
+    std::vector<__u8> read(__u64 offset, __u32 size) {
+      if (offset >= 0xd0000000 && offset < 0xd0001000) {
+        return read_dev(blk_dev, blk_queue, offset - 0xd0000000, size);
+      }
+      if (offset >= 0xd0001000 && offset < 0xd0002000) {
+        return read_dev(rng_dev, rng_queue, offset - 0xd0001000, size);
+      }
+    }
+
+    void write(__u8 *data, __u64 offset, __u32 size) {
+      if (offset >= 0xd0000000 && offset < 0xd0001000) {
+        return write_dev(blk_dev, blk_queue, data, offset - 0xd0000000, size);
+      }
+      if (offset >= 0xd0001000 && offset < 0xd0002000) {
+        return write_dev(rng_dev, rng_queue, data, offset - 0xd0001000, size);
+      }
+    }
+
     bool update(__u8 *ptr) {
-      return interrupt_asserted = dev.update(q, ptr);
+      rng_dev.update(rng_queue, ptr);
+      return blk_dev.interrupt_asserted = blk_dev.update(blk_queue, ptr);
     }
 
   private:
-    blk dev;
-    queue q;
+    blk blk_dev;
+    queue blk_queue;
 
-    __u64 driver_features = 0;
-
-    bool interrupt_asserted = false;
-
-    bool device_feature_sel = false;
-    bool driver_feature_sel = false;
+    rng rng_dev;
+    queue rng_queue;
   };
 
 } // namespace kvm::virtio
