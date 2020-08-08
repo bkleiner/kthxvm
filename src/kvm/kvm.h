@@ -156,7 +156,7 @@ namespace kvm {
       }
 
       if (ioctl(fd, KVM_RUN, 0) < 0)
-        throw std::runtime_error("KVM_RUN failed");
+        ioctl_err("KVM_RUN");
 
       return kvm_run;
     }
@@ -213,6 +213,7 @@ namespace kvm {
     int run(bool single_step = false) {
       while (true) {
         auto kvm_run = cpu->run(single_step);
+
         switch (kvm_run->exit_reason) {
         case KVM_EXIT_IO:
           if (kvm_run->io.port >= 0x3f8 && kvm_run->io.port <= 0x3ff) {
@@ -230,7 +231,7 @@ namespace kvm {
               uart.write(data, offset, size);
             }
 
-            continue;
+            break;
           }
 
           fmt::print(
@@ -241,19 +242,15 @@ namespace kvm {
               kvm_run->io.size,
               kvm_run->io.count);
           fmt::print("kvm::vcpu::io value {:#x}\n", *((char *)kvm_run + kvm_run->io.data_offset));
-          continue;
+          break;
         case KVM_EXIT_MMIO: {
           if (!kvm_run->mmio.is_write) {
-            auto buf = mmio.read(kvm_run->mmio.phys_addr - 0xd0000000, kvm_run->mmio.len);
+            auto buf = mmio.read(kvm_run->mmio.phys_addr, kvm_run->mmio.len);
             memcpy(kvm_run->mmio.data, buf.data(), buf.size());
           } else {
-            mmio.write(&kvm_run->mmio.data[0], kvm_run->mmio.phys_addr - 0xd0000000, kvm_run->mmio.len);
+            mmio.write(&kvm_run->mmio.data[0], kvm_run->mmio.phys_addr, kvm_run->mmio.len);
           }
-
-          send_interrupt(7, false);
-          if (mmio.update(memory_ptr()))
-            send_interrupt(7, true);
-          continue;
+          break;
         }
         case KVM_EXIT_DEBUG:
           fmt::print(
@@ -262,7 +259,7 @@ namespace kvm {
               kvm_run->debug.arch.dr6,
               kvm_run->debug.arch.dr7,
               kvm_run->debug.arch.pc);
-          continue;
+          break;
         case KVM_EXIT_HLT:
           fmt::print("kvm::vcpu halted\n");
           return 0;
@@ -271,6 +268,12 @@ namespace kvm {
           return kvm_run->exit_reason;
         }
       }
+
+      if (mmio.update(memory_ptr())) {
+        send_interrupt(7, true);
+        send_interrupt(7, false);
+      }
+
       return 1;
     }
 
