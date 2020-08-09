@@ -13,15 +13,48 @@
 
 namespace kvm::virtio {
 
-  class mmio {
+  class mmio_device {
+  public:
+    mmio_device(__u64 addr, __u64 width, __u32 interrupt)
+        : addr(addr)
+        , width(width)
+        , interrupt(interrupt) {}
+
+    virtual std::vector<__u8> read(__u64 offset, __u32 size) = 0;
+    virtual void write(__u8 *data, __u64 offset, __u32 size) = 0;
+    virtual bool update(__u8 *ptr) = 0;
+
+    bool in_range(__u64 port) {
+      return port >= addr && port < (addr + width);
+    }
+
+    __u32 irq() {
+      return interrupt;
+    }
+
+    __u64 offset(__u64 port) {
+      return port - addr;
+    }
+
+  protected:
+    __u64 addr;
+    __u64 width;
+    __u32 interrupt;
+  };
+
+  template <class device_type>
+  class mmio_device_holder : public mmio_device {
   public:
     static constexpr __u32 MMIO_MAGIC_VALUE = 0x74726976;
     static constexpr __u32 VIRT_VENDOR = 0x4b544858; // 'KTHX'
 
-    mmio()
-        : blk_dev("guest/debian.ext4") {}
+    template <typename... arg_types>
+    mmio_device_holder(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args)
+        : mmio_device(addr, width, interrupt)
+        , dev(std::forward<arg_types>(args)...) {
+    }
 
-    std::vector<__u8> read_dev(device &dev, queue &q, __u64 offset, __u32 size) {
+    std::vector<__u8> read(__u64 offset, __u32 size) {
       std::vector<__u8> buf(size);
       switch (offset) {
       case VIRTIO_MMIO_MAGIC_VALUE:
@@ -54,7 +87,7 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_QUEUE_READY:
-        *((__u32 *)buf.data()) = q.ready;
+        *((__u32 *)buf.data()) = dev.q().ready;
         break;
 
       case VIRTIO_MMIO_CONFIG_GENERATION:
@@ -93,7 +126,7 @@ namespace kvm::virtio {
       return buf;
     }
 
-    void write_dev(device &dev, queue &q, __u8 *data, __u64 offset, __u32 size) {
+    void write(__u8 *data, __u64 offset, __u32 size) {
       const __u32 value = *((__u32 *)data);
 
       switch (offset) {
@@ -127,38 +160,38 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_QUEUE_SEL:
-        q.index = value;
+        dev.queue_index = value;
         break;
 
       case VIRTIO_MMIO_QUEUE_NUM:
-        q.size = value;
+        dev.q().size = value;
         break;
 
       case VIRTIO_MMIO_QUEUE_READY:
-        q.ready = value;
+        dev.q().ready = value;
         break;
 
       case VIRTIO_MMIO_QUEUE_NOTIFY:
-        q.notify = 1;
+        dev.q().notify = 1;
         break;
 
       case VIRTIO_MMIO_QUEUE_DESC_LOW:
-        q.desc_addr |= (__u64(value) << 0);
+        dev.q().desc_addr |= (__u64(value) << 0);
         break;
       case VIRTIO_MMIO_QUEUE_DESC_HIGH:
-        q.desc_addr |= (__u64(value) << 32);
+        dev.q().desc_addr |= (__u64(value) << 32);
         break;
       case VIRTIO_MMIO_QUEUE_AVAIL_LOW:
-        q.avail_addr |= (__u64(value) << 0);
+        dev.q().avail_addr |= (__u64(value) << 0);
         break;
       case VIRTIO_MMIO_QUEUE_AVAIL_HIGH:
-        q.avail_addr |= (__u64(value) << 32);
+        dev.q().avail_addr |= (__u64(value) << 32);
         break;
       case VIRTIO_MMIO_QUEUE_USED_LOW:
-        q.used_addr |= (__u64(value) << 0);
+        dev.q().used_addr |= (__u64(value) << 0);
         break;
       case VIRTIO_MMIO_QUEUE_USED_HIGH:
-        q.used_addr |= (__u64(value) << 32);
+        dev.q().used_addr |= (__u64(value) << 32);
         break;
 
       case VIRTIO_MMIO_INTERRUPT_ACK:
@@ -174,42 +207,54 @@ namespace kvm::virtio {
       }
     }
 
+    bool update(__u8 *ptr) {
+      if (!dev.interrupt_asserted && dev.update(ptr)) {
+        dev.interrupt_asserted = true;
+        return true;
+      }
+      return false;
+    }
+
+  private:
+    device_type dev;
+  };
+
+  class mmio {
+  public:
     std::vector<__u8> read(__u64 offset, __u32 size) {
-      if (offset >= 0xd0000000 && offset < 0xd0001000) {
-        return read_dev(blk_dev, blk_queue, offset - 0xd0000000, size);
+      for (auto &dev : devices) {
+        if (dev->in_range(offset)) {
+          return dev->read(dev->offset(offset), size);
+        }
       }
-      if (offset >= 0xd0001000 && offset < 0xd0002000) {
-        return read_dev(rng_dev, rng_queue, offset - 0xd0001000, size);
-      }
+
+      return {};
     }
 
     void write(__u8 *data, __u64 offset, __u32 size) {
-      if (offset >= 0xd0000000 && offset < 0xd0001000) {
-        return write_dev(blk_dev, blk_queue, data, offset - 0xd0000000, size);
-      }
-      if (offset >= 0xd0001000 && offset < 0xd0002000) {
-        return write_dev(rng_dev, rng_queue, data, offset - 0xd0001000, size);
+      for (auto &dev : devices) {
+        if (dev->in_range(offset)) {
+          return dev->write(data, dev->offset(offset), size);
+        }
       }
     }
 
     __u32 update(__u8 *ptr) {
-      if (!blk_dev.interrupt_asserted && blk_dev.update(blk_queue, ptr)) {
-        blk_dev.interrupt_asserted = true;
-        return 7;
-      }
-      if (!rng_dev.interrupt_asserted && rng_dev.update(rng_queue, ptr)) {
-        rng_dev.interrupt_asserted = true;
-        return 8;
+      for (auto &dev : devices) {
+        if (dev->update(ptr)) {
+          return dev->irq();
+        }
       }
       return 0;
     }
 
-  private:
-    blk blk_dev;
-    queue blk_queue;
+    template <class device_type, typename... arg_types>
+    void add_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
+      devices.emplace_back(new mmio_device_holder<device_type>{addr, width, interrupt, std::forward<arg_types>(args)...});
+    }
 
-    rng rng_dev;
-    queue rng_queue;
+  private:
+    std::vector<std::unique_ptr<mmio_device>> devices;
   };
 
 } // namespace kvm::virtio

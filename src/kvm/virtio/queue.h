@@ -8,7 +8,7 @@ namespace kvm::virtio {
 
   class queue {
   public:
-    static constexpr __u32 QUEUE_SIZE_MAX = 0x100;
+    static constexpr __u32 QUEUE_SIZE_MAX = 0x200;
 
     struct descriptor_elem_t {
       __u64 addr;
@@ -40,7 +40,7 @@ namespace kvm::virtio {
       __u16 avail_event;
     } __attribute__((aligned(4)));
 
-    inline descriptor_t *descriptors(__u8 *ptr) {
+    inline descriptor_t *desc(__u8 *ptr) {
       return reinterpret_cast<descriptor_t *>(ptr + desc_addr);
     }
 
@@ -62,21 +62,21 @@ namespace kvm::virtio {
         return nullptr;
       }
       last_avail++;
-      return &descriptors(ptr)->ring[avail_id(ptr)];
+      return &desc(ptr)->ring[avail_id(ptr)];
     }
 
-    void add_used(__u8 *ptr, __u32 start, __u32 len) {
+    __u16 add_used(__u8 *ptr, __u32 start, __u32 len) {
       wmb();
       used(ptr)->ring[used(ptr)->idx % size].len = len;
       used(ptr)->ring[used(ptr)->idx % size].id = start;
       used(ptr)->idx++;
       wmb();
+      return used(ptr)->idx;
     }
 
   public:
     __u32 notify = 0;
 
-    __u32 index = 0;
     __u32 size = 0;
     __u32 ready = 0;
 

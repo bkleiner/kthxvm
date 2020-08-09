@@ -12,7 +12,7 @@
 
 namespace kvm::virtio {
 
-  class rng : public device {
+  class rng : public queue_device<1> {
   public:
     rng()
         : file("/dev/random") {
@@ -42,19 +42,19 @@ namespace kvm::virtio {
       return 0;
     }
 
-    bool update(queue &q, __u8 *ptr) {
-      queue::descriptor_elem_t *next = q.next(ptr);
+    bool update(__u8 *ptr) {
+      queue::descriptor_elem_t *next = q().next(ptr);
       if (next == nullptr) {
         return false;
       }
 
       __u32 len = 0;
-      __u32 desc_start = q.avail_id(ptr);
+      __u32 desc_start = q().avail_id(ptr);
 
       file.read((char *)(ptr + next->addr), next->len);
       len += next->len;
 
-      q.add_used(ptr, desc_start, len);
+      q().add_used(ptr, desc_start, len);
       return true;
     }
 

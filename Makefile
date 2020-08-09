@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -g -O0 
-LDFLAGS = -lfmt
+CXXFLAGS = -g -O0 -I include -I src
+LDFLAGS = -lfmt -pthread
 
 TARGET = kthxvm
 

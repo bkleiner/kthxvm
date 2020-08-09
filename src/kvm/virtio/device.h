@@ -25,8 +25,9 @@ namespace kvm::virtio {
     virtual __u32 device_id() = 0;
     virtual __u32 features() = 0;
     virtual __u32 config_generation() = 0;
+    virtual queue &q() = 0;
 
-    virtual bool update(queue &q, __u8 *ptr) = 0;
+    virtual bool update(__u8 *ptr) = 0;
 
     __u32 read_status() {
       return status;
@@ -37,6 +38,7 @@ namespace kvm::virtio {
     }
 
     __u64 driver_features = 0;
+    __u32 queue_index = 0;
 
     bool interrupt_asserted = false;
 
@@ -46,4 +48,16 @@ namespace kvm::virtio {
   protected:
     __u8 status = VIRTIO_DEVICE_RESET;
   };
+
+  template <size_t queue_count>
+  class queue_device : public device {
+  public:
+    virtual queue &q() {
+      return queues[queue_index];
+    }
+
+  protected:
+    std::array<queue, queue_count> queues;
+  };
+
 } // namespace kvm::virtio

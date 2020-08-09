@@ -5,14 +5,19 @@
 #include <fmt/format.h>
 
 #include <asm/types.h>
+
 #include <linux/virtio_blk.h>
 #include <linux/virtio_config.h>
+
+#include <vring_def.h>
 
 #include "device.h"
 
 namespace kvm::virtio {
 
-  class blk : public device {
+  constexpr char DISK_ID[] = "kthxvmkthxvmkthxvmdisk";
+
+  class blk : public queue_device<1> {
   public:
     struct req_header {
       __u32 type;
@@ -29,6 +34,8 @@ namespace kvm::virtio {
       // 512 blocks
       file.seekg(0, std::ios::end);
       config.capacity = file.tellg() / 512;
+      config.size_max = 32768;
+      config.seg_max = queue::QUEUE_SIZE_MAX / 2;
     }
 
     std::vector<__u8> read(__u64 offset, __u32 size) {
@@ -58,48 +65,70 @@ namespace kvm::virtio {
     }
 
     __u32 features() {
-      return 0;
+      return (1UL << VIRTIO_BLK_F_SIZE_MAX) |
+             (1UL << VIRTIO_BLK_F_SEG_MAX) |
+             (1UL << VIRTIO_RING_F_EVENT_IDX);
     }
 
     __u32 config_generation() {
       return generation;
     }
 
-    bool update(queue &q, __u8 *ptr) {
-      queue::descriptor_elem_t *next = q.next(ptr);
+    bool update(__u8 *ptr) {
+      if (!q().notify) {
+        return false;
+      }
+      q().notify = false;
+
+      queue::descriptor_elem_t *next = q().next(ptr);
       if (next == nullptr) {
         return false;
       }
 
       __u32 len = 0;
-      __u32 desc_start = q.avail_id(ptr);
+      __u32 desc_start = q().avail_id(ptr);
 
       req_header *hdr = reinterpret_cast<req_header *>(ptr + next->addr);
       switch (hdr->type) {
       case VIRTIO_BLK_T_IN: {
-        next = &q.descriptors(ptr)->ring[next->next];
-        fmt::print("kvm::virtio::blk read at {:#x} ({})\n", hdr->sector * 512, next->len);
+        next = &q().desc(ptr)->ring[next->next];
+        //fmt::print("kvm::virtio::blk read at {:#x} ({})\n", hdr->sector * 512, next->len);
 
         file.seekg(hdr->sector * 512);
-        file.read((char *)(ptr + next->addr), next->len);
-        len += next->len;
+        while (next->flags & VRING_DESC_F_NEXT) {
+          file.read((char *)(ptr + next->addr), next->len);
+          len += next->len;
+          next = &q().desc(ptr)->ring[next->next];
+        }
 
-        next = &q.descriptors(ptr)->ring[next->next];
         *(ptr + next->addr) = VIRTIO_BLK_S_OK;
         len += 1;
         break;
       }
 
       case VIRTIO_BLK_T_OUT: {
-        next = &q.descriptors(ptr)->ring[next->next];
-        fmt::print("kvm::virtio::blk write at {:#x} ({})\n", hdr->sector * 512, next->len);
+        next = &q().desc(ptr)->ring[next->next];
+        //fmt::print("kvm::virtio::blk write at {:#x} ({})\n", hdr->sector * 512, next->len);
 
         file.seekp(hdr->sector * 512);
-        file.write((char *)(ptr + next->addr), next->len);
-        file.flush();
+        while (next->flags & VRING_DESC_F_NEXT) {
+          file.write((char *)(ptr + next->addr), next->len);
+          file.flush();
+          len += next->len;
+          next = &q().desc(ptr)->ring[next->next];
+        }
+
+        *(ptr + next->addr) = VIRTIO_BLK_S_OK;
+        len += 1;
+        break;
+      }
+
+      case VIRTIO_BLK_T_GET_ID: {
+        next = &q().desc(ptr)->ring[next->next];
+        memcpy((char *)(ptr + next->addr), DISK_ID, next->len);
         len += next->len;
 
-        next = &q.descriptors(ptr)->ring[next->next];
+        next = &q().desc(ptr)->ring[next->next];
         *(ptr + next->addr) = VIRTIO_BLK_S_OK;
         len += 1;
         break;
@@ -107,11 +136,10 @@ namespace kvm::virtio {
 
       default:
         fmt::print("kvm::virtio::blk unhandled request {}\n", hdr->type);
-        break;
+        return false;
       }
 
-      q.add_used(ptr, desc_start, len);
-      return true;
+      return (q().add_used(ptr, desc_start, len) - 1) == q().avail(ptr)->used_event;
     }
 
   private:

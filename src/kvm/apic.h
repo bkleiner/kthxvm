@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kvm.h"
+#include "vm.h"
 
 namespace kvm {
   static constexpr __u64 APIC_LVT0 = 0x350;

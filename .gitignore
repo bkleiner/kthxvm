@@ -1,6 +1,7 @@
 /.vscode
 /build
 /guest/vmlinux
+/guest
 
 *.o
 *.elf
