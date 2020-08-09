@@ -25,8 +25,9 @@ namespace kvm::virtio {
       __u64 sector;
     };
 
-    blk(std::string filename)
-        : file(filename, std::ios::binary | std::ios::in | std::ios::out) {
+    blk(::kvm::interrupt *irq, std::string filename)
+        : queue_device<VIRTIO_ID_BLOCK, 1>(irq)
+        , file(filename, std::ios::binary | std::ios::in | std::ios::out) {
 
       if (!file.is_open())
         throw std::runtime_error(fmt::format("could not open file {}", filename));
@@ -70,15 +71,10 @@ namespace kvm::virtio {
       return generation;
     }
 
-    bool update(__u8 *ptr) {
-      if (!q().notify) {
-        return false;
-      }
-      q().notify = false;
-
+    void update(__u8 *ptr) override {
       queue::descriptor_elem_t *next = q().next(ptr);
       if (next == nullptr) {
-        return false;
+        return;
       }
 
       __u32 len = 0;
@@ -132,10 +128,12 @@ namespace kvm::virtio {
 
       default:
         fmt::print("kvm::virtio::blk unhandled request {}\n", hdr->type);
-        return false;
+        return;
       }
 
-      return (q().add_used(ptr, desc_start, len) - 1) == q().avail(ptr)->used_event;
+      if ((q().add_used(ptr, desc_start, len) - 1) == q().avail(ptr)->used_event) {
+        irq->set_level(true);
+      }
     }
 
   private:

@@ -57,8 +57,13 @@ namespace kvm::virtio {
     }
 
     descriptor_elem_t *next(__u8 *ptr) {
+      if (!notify || !ready) {
+        return nullptr;
+      }
+      notify = false;
+
       rmb();
-      if (!ready || avail(ptr)->idx <= last_avail) {
+      if (avail(ptr)->idx <= last_avail) {
         return nullptr;
       }
       last_avail++;
@@ -74,9 +79,11 @@ namespace kvm::virtio {
       return used(ptr)->idx;
     }
 
-  public:
-    __u32 notify = 0;
+    void do_notify() {
+      notify = true;
+    }
 
+  public:
     __u32 size = 0;
     __u32 ready = 0;
 
@@ -87,6 +94,7 @@ namespace kvm::virtio {
     __u32 last_avail = 0;
 
   private:
+    bool notify = false;
   };
 
 } // namespace kvm::virtio

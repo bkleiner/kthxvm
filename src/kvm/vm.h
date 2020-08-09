@@ -77,17 +77,18 @@ namespace kvm {
 
     template <class device_type, typename... arg_types>
     device_type *add_io_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
-      auto ptr = new device_type{addr, width, interrupt, std::forward<arg_types>(args)...};
-      if (interrupt) {
-        register_irq(ptr->interrupt);
-      }
+      auto irq = register_irq(interrupt);
+
+      auto ptr = new device_type{addr, width, irq, std::forward<arg_types>(args)...};
       io_devices.emplace_back(ptr);
+
       return ptr;
     }
 
     template <class device_type, typename... arg_types>
     void add_mmio_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
-      mmio.add_device<device_type>(addr, width, interrupt, std::forward<arg_types>(args)...);
+      auto irq = register_irq(interrupt);
+      mmio.add_device<device_type>(addr, width, irq, std::forward<arg_types>(args)...);
     }
 
     void handle_io_device(kvm_run *kvm_run, device::io_device &dev) {
@@ -179,13 +180,7 @@ namespace kvm {
           } else {
             mmio.write(&kvm_run->mmio.data[0], kvm_run->mmio.phys_addr, kvm_run->mmio.len);
           }
-          while (true) {
-            __u32 irq = mmio.update(memory_ptr());
-            if (irq == 0) {
-              break;
-            }
-            trigger_interrupt(irq);
-          }
+          mmio.update(memory_ptr());
           break;
         }
         case KVM_EXIT_DEBUG:
@@ -258,21 +253,32 @@ namespace kvm {
       cpu = std::make_unique<vcpu>(vcpu_fd, vcpu_mmap_size);
     }
 
-    void register_irq(interrupt &irq) {
+    ::kvm::interrupt *register_irq(__u32 num) {
+      if (interrupts[num]) {
+        return interrupts[num].get();
+      }
+
+      ::kvm::interrupt *irq = new ::kvm::interrupt(num);
+      interrupts[num] = std::unique_ptr<::kvm::interrupt>(irq);
+
       struct kvm_irqfd irqfd = {
-          irq.event_fd(),
-          irq.num(),
+          irq->event_fd(),
+          irq->num(),
           0,
           0,
       };
       if (ioctl(fd, KVM_IRQFD, &irqfd) < 0)
         ioctl_err("KVM_IRQFD");
+
+      return irq;
     }
 
     int fd;
 
     __u8 *memory;
     size_t memory_size;
+
+    std::array<std::unique_ptr<::kvm::interrupt>, 32> interrupts;
 
     std::unique_ptr<vcpu> cpu;
     std::vector<std::unique_ptr<device::io_device>> io_devices;

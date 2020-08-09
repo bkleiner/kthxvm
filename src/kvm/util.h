@@ -6,6 +6,10 @@
 
 #include <fmt/format.h>
 
+#include <asm/types.h>
+
+#include <poll.h>
+
 namespace kvm {
   std::string errno_msg(std::string ctl) {
     return fmt::format("{}: {} ({})", ctl, strerror(errno), errno);
@@ -28,4 +32,17 @@ namespace kvm {
     memcpy(memory, buf.data(), buf.size());
     return 0;
   }
+
+  bool poll_fd_in(int fd, int timeout) {
+    struct pollfd state = {
+        fd,
+        POLLIN,
+        0,
+    };
+    if (poll(&state, 1, timeout) <= 0) {
+      return false;
+    }
+    return state.revents & POLLIN;
+  }
+
 } // namespace kvm

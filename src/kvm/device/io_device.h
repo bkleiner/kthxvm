@@ -4,21 +4,19 @@
 
 #include <asm/types.h>
 
+#include "kvm/interrupt.h"
+
 namespace kvm::device {
 
   class io_device {
   public:
-    io_device(__u64 addr, __u64 width, __u32 interrupt)
+    io_device(__u64 addr, __u64 width, ::kvm::interrupt *irq)
         : addr(addr)
         , width(width)
-        , interrupt(interrupt) {}
+        , irq(irq) {}
 
     bool in_range(__u64 port) {
       return port >= addr && port < (addr + width);
-    }
-
-    __u32 irq() {
-      return interrupt;
     }
 
     __u64 offset(__u64 port) {
@@ -31,7 +29,7 @@ namespace kvm::device {
   protected:
     __u64 addr;
     __u64 width;
-    __u32 interrupt;
+    ::kvm::interrupt *irq;
   };
 
 } // namespace kvm::device

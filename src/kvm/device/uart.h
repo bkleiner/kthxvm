@@ -7,7 +7,6 @@
 #include <asm/types.h>
 #include <fmt/format.h>
 
-#include "kvm/interrupt.h"
 #include "os/terminal.h"
 
 #include "io_device.h"
@@ -49,9 +48,8 @@ namespace kvm::device {
 
     static constexpr __u8 FIFO_LEN = 64;
 
-    uart(__u64 addr, __u64 width, __u32 irq, ::os::terminal *terminal)
+    uart(__u64 addr, __u64 width, ::kvm::interrupt *irq, ::os::terminal *terminal)
         : io_device(addr, width, irq)
-        , interrupt(irq)
         , term(terminal) {}
 
     std::vector<__u8> read(__u64 offset, __u32 size) override {
@@ -217,10 +215,10 @@ namespace kvm::device {
 
       if (!tmp_iir) {
         iir = IIR_NONE_BIT;
-        interrupt.set_level(false);
+        irq->set_level(false);
       } else {
         iir = tmp_iir;
-        interrupt.set_level(true);
+        irq->set_level(true);
       }
 
       if (!(ier & IER_THR_BIT))
@@ -252,8 +250,6 @@ namespace kvm::device {
       update_irq();
       return 1;
     }
-
-    ::kvm::interrupt interrupt;
 
   private:
     std::mutex mu;

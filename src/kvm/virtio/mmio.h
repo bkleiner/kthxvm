@@ -16,10 +16,10 @@
 namespace kvm::virtio {
   class mmio_device : public ::kvm::device::io_device {
   public:
-    mmio_device(__u64 addr, __u64 width, __u32 irq)
+    mmio_device(__u64 addr, __u64 width, ::kvm::interrupt *irq)
         : ::kvm::device::io_device(addr, width, irq) {}
 
-    virtual bool update(__u8 *ptr) = 0;
+    virtual void update(__u8 *ptr) = 0;
   };
 
   template <class device_type>
@@ -29,9 +29,9 @@ namespace kvm::virtio {
     static constexpr __u32 VIRT_VENDOR = 0x4b544858; // 'KTHX'
 
     template <typename... arg_types>
-    mmio_device_holder(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args)
-        : mmio_device(addr, width, interrupt)
-        , dev(std::forward<arg_types>(args)...) {
+    mmio_device_holder(__u64 addr, __u64 width, ::kvm::interrupt *irq, arg_types &&... args)
+        : mmio_device(addr, width, irq)
+        , dev(irq, std::forward<arg_types>(args)...) {
     }
 
     std::vector<__u8> read(__u64 offset, __u32 size) {
@@ -75,7 +75,7 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_INTERRUPT_STATUS:
-        *((__u32 *)buf.data()) = dev.interrupt_asserted ? 0x1 : 0x0;
+        *((__u32 *)buf.data()) = dev.irq_level() ? 0x1 : 0x0;
         break;
 
       case VIRTIO_MMIO_DEVICE_FEATURES_SEL:
@@ -152,7 +152,7 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_QUEUE_NOTIFY:
-        dev.q().notify = 1;
+        dev.q(value).do_notify();
         break;
 
       case VIRTIO_MMIO_QUEUE_DESC_LOW:
@@ -175,7 +175,7 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_INTERRUPT_ACK:
-        dev.interrupt_asserted = false;
+        dev.irq_ack();
         break;
 
       default:
@@ -187,12 +187,8 @@ namespace kvm::virtio {
       }
     }
 
-    bool update(__u8 *ptr) {
-      if (!dev.interrupt_asserted && dev.update(ptr)) {
-        dev.interrupt_asserted = true;
-        return true;
-      }
-      return false;
+    void update(__u8 *ptr) {
+      dev.update(ptr);
     }
 
   private:
@@ -219,18 +215,20 @@ namespace kvm::virtio {
       }
     }
 
-    __u32 update(__u8 *ptr) {
+    void update(__u8 *ptr) {
       for (auto &dev : devices) {
-        if (dev->update(ptr)) {
-          return dev->irq();
-        }
+        dev->update(ptr);
       }
-      return 0;
     }
 
     template <class device_type, typename... arg_types>
-    void add_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
-      devices.emplace_back(new mmio_device_holder<device_type>{addr, width, interrupt, std::forward<arg_types>(args)...});
+    void add_device(__u64 addr, __u64 width, ::kvm::interrupt *irq, arg_types &&... args) {
+      devices.emplace_back(new mmio_device_holder<device_type>{
+          addr,
+          width,
+          irq,
+          std::forward<arg_types>(args)...,
+      });
     }
 
   private:

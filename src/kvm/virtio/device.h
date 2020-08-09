@@ -4,6 +4,7 @@
 
 #include <asm/types.h>
 
+#include "kvm/interrupt.h"
 #include "queue.h"
 
 namespace kvm::virtio {
@@ -19,6 +20,9 @@ namespace kvm::virtio {
       VIRTIO_DEVICE_FAILED = 128,
     };
 
+    device(::kvm::interrupt *irq)
+        : irq(irq) {}
+
     virtual std::vector<__u8> read(__u64 offset, __u32 size) = 0;
     virtual void write(__u8 *data, __u64 offset, __u32 size) = 0;
 
@@ -29,7 +33,7 @@ namespace kvm::virtio {
     virtual queue &q() = 0;
     virtual queue &q(__u32 index) = 0;
 
-    virtual bool update(__u8 *ptr) = 0;
+    virtual void update(__u8 *ptr) = 0;
 
     __u32 read_status() {
       return status;
@@ -39,21 +43,31 @@ namespace kvm::virtio {
       status = update;
     }
 
+    bool irq_level() {
+      return irq->level();
+    }
+
+    void irq_ack() {
+      irq->set_level(false);
+    }
+
     __u64 driver_features = 0;
     __u32 queue_index = 0;
-
-    bool interrupt_asserted = false;
 
     bool device_feature_sel = false;
     bool driver_feature_sel = false;
 
   protected:
+    ::kvm::interrupt *irq;
     __u8 status = VIRTIO_DEVICE_RESET;
   };
 
   template <__u32 dev_id, size_t queue_count>
   class queue_device : public device {
   public:
+    queue_device(::kvm::interrupt *irq)
+        : device(irq) {}
+
     queue &q(__u32 index) override {
       return queues[index];
     }
