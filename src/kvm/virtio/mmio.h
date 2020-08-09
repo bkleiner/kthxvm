@@ -5,13 +5,13 @@
 #include <fmt/format.h>
 
 #include <asm/types.h>
+#include <linux/virtio_config.h>
 #include <linux/virtio_ids.h>
 #include <linux/virtio_mmio.h>
 
 #include "kvm/device/io_device.h"
 
-#include "blk.h"
-#include "rng.h"
+#include "queue.h"
 
 namespace kvm::virtio {
   class mmio_device : public ::kvm::device::io_device {

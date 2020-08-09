@@ -25,7 +25,9 @@ namespace kvm::virtio {
     virtual __u32 device_id() = 0;
     virtual __u32 features() = 0;
     virtual __u32 config_generation() = 0;
+
     virtual queue &q() = 0;
+    virtual queue &q(__u32 index) = 0;
 
     virtual bool update(__u8 *ptr) = 0;
 
@@ -52,6 +54,10 @@ namespace kvm::virtio {
   template <__u32 dev_id, size_t queue_count>
   class queue_device : public device {
   public:
+    queue &q(__u32 index) override {
+      return queues[index];
+    }
+
     queue &q() override {
       return queues[queue_index];
     }

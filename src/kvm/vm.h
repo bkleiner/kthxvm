@@ -12,12 +12,10 @@
 
 #include <sys/mman.h>
 
+#include "interrupt.h"
 #include "kvm.h"
 #include "layout.h"
 #include "vcpu.h"
-
-#include "device/rtc.h"
-#include "device/uart.h"
 
 #include "virtio/mmio.h"
 
@@ -279,7 +277,6 @@ namespace kvm {
     std::unique_ptr<vcpu> cpu;
     std::vector<std::unique_ptr<device::io_device>> io_devices;
 
-    device::rtc rtc;
     virtio::mmio mmio;
   };
 

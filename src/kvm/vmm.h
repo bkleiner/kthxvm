@@ -18,8 +18,14 @@
 #include "regs.h"
 #include "vm.h"
 
-namespace kvm {
+#include "device/rtc.h"
+#include "device/uart.h"
 
+#include "virtio/blk.h"
+#include "virtio/net.h"
+#include "virtio/rng.h"
+
+namespace kvm {
 
   class vmm {
   public:
@@ -32,7 +38,12 @@ namespace kvm {
         , vm(kvm, 1, memory_size) {}
 
     int start(std::string kernel, std::string disk) {
-      const std::string cmdline = "console=ttyS0 virtio_mmio.device=4K@0xd0000000:12 virtio_mmio.device=0x100@0xd0001000:13 reboot=k panic=1 pci=off root=/dev/vda init=/sbin/init";
+      std::string cmdline = "console=ttyS0";
+      cmdline += " virtio_mmio.device=0x1000@0xd0000000:12";
+      cmdline += " virtio_mmio.device=0x1000@0xd0001000:13";
+      cmdline += " virtio_mmio.device=0x1000@0xd0002000:14";
+      cmdline += " reboot=k panic=1 pci=off";
+      cmdline += " root=/dev/vda init=/sbin/init";
 
       auto cpuid2 = kvm.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES);
       filter_cpuid_copy(cpuid2);
@@ -56,6 +67,7 @@ namespace kvm {
 
       vm.add_mmio_device<virtio::blk>(0xd0000000, 0x1000, 12, disk);
       vm.add_mmio_device<virtio::rng>(0xd0001000, 0x1000, 13);
+      vm.add_mmio_device<virtio::net>(0xd0002000, 0x1000, 14);
 
       std::thread vm_thread(&vm::run, &vm, false);
       std::thread terminal_thread(&vmm::read_terminal, this);
