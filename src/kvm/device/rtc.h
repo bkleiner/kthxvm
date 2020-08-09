@@ -28,13 +28,13 @@ namespace kvm::device {
     static constexpr __u8 RTC_REG_C = 0x0C;
     static constexpr __u8 RTC_REG_D = 0x0D;
 
-    std::vector<char> read(__u8 offset, __u8 size) {
+    std::vector<__u8> read(__u64 offset, __u32 size) {
       time_t ti;
       time(&ti);
 
       struct tm *tm = gmtime(&ti);
 
-      std::vector<char> buf(size);
+      std::vector<__u8> buf(size);
 
       switch (idx) {
       case RTC_SECONDS:
@@ -73,7 +73,7 @@ namespace kvm::device {
       return buf;
     }
 
-    void write(char *data, __u8 offset, __u8 size) {
+    void write(__u8 *data, __u64 offset, __u32 size) {
       switch (idx) {
       case RTC_REG_C:
       case RTC_REG_D:

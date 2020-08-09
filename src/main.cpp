@@ -6,7 +6,7 @@ int main(int argc, char **argv) {
 
   //return vmm.start("guest/debian-vmlinux");
   //return vmm.start("guest/ubuntu-vmlinux");
-  return vmm.start("guest/new-vmlinux");
+  return vmm.start("guest/new-vmlinux", "guest/debian.ext4");
   //return vmm.start("guest/vmlinux");
   //return vmm.start("guest/guest.elf");
 }

@@ -17,7 +17,7 @@ namespace kvm::virtio {
 
   constexpr char DISK_ID[] = "kthxvmkthxvmkthxvmdisk";
 
-  class blk : public queue_device<1> {
+  class blk : public queue_device<VIRTIO_ID_BLOCK, 1> {
   public:
     struct req_header {
       __u32 type;
@@ -58,10 +58,6 @@ namespace kvm::virtio {
 
       memcpy((uint8_t *)(&config) + offset, data, size);
       generation++;
-    }
-
-    __u32 device_id() {
-      return VIRTIO_ID_BLOCK;
     }
 
     __u32 features() {

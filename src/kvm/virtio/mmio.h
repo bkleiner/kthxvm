@@ -8,38 +8,18 @@
 #include <linux/virtio_ids.h>
 #include <linux/virtio_mmio.h>
 
+#include "kvm/device/io_device.h"
+
 #include "blk.h"
 #include "rng.h"
 
 namespace kvm::virtio {
-
-  class mmio_device {
+  class mmio_device : public ::kvm::device::io_device {
   public:
-    mmio_device(__u64 addr, __u64 width, __u32 interrupt)
-        : addr(addr)
-        , width(width)
-        , interrupt(interrupt) {}
+    mmio_device(__u64 addr, __u64 width, __u32 irq)
+        : ::kvm::device::io_device(addr, width, irq) {}
 
-    virtual std::vector<__u8> read(__u64 offset, __u32 size) = 0;
-    virtual void write(__u8 *data, __u64 offset, __u32 size) = 0;
     virtual bool update(__u8 *ptr) = 0;
-
-    bool in_range(__u64 port) {
-      return port >= addr && port < (addr + width);
-    }
-
-    __u32 irq() {
-      return interrupt;
-    }
-
-    __u64 offset(__u64 port) {
-      return port - addr;
-    }
-
-  protected:
-    __u64 addr;
-    __u64 width;
-    __u32 interrupt;
   };
 
   template <class device_type>

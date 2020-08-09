@@ -20,10 +20,6 @@
 
 namespace kvm {
 
-  static constexpr __u64 KERNEL_BOOT_FLAG_MAGIC = 0xaa55;
-  static constexpr __u64 KERNEL_HDR_MAGIC = 0x53726448;
-  static constexpr __u64 KERNEL_LOADER_OTHER = 0xff;
-  static constexpr __u64 KERNEL_MIN_ALIGNMENT_BYTES = 0x1000000;
 
   class vmm {
   public:
@@ -33,9 +29,10 @@ namespace kvm {
         : run_terminal(true)
         , kvm()
         , term()
-        , vm(kvm, &term, 1, memory_size, "guest/debian.ext4") {}
+        , vm(kvm, 1, memory_size) {}
 
-    int start(std::string kernel) {
+    int start(std::string kernel, std::string disk) {
+      const std::string cmdline = "console=ttyS0 virtio_mmio.device=4K@0xd0000000:12 virtio_mmio.device=0x100@0xd0001000:13 reboot=k panic=1 pci=off root=/dev/vda init=/sbin/init";
 
       auto cpuid2 = kvm.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES);
       filter_cpuid_copy(cpuid2);
@@ -49,8 +46,16 @@ namespace kvm {
       setup_long_mode(vm);
       setup_lapic(vm);
       setup_irq_routing(vm);
-      setup_bootparams();
+      setup_bootparams(vm, cmdline, memory_size);
       setup_mptable(vm);
+
+      ttyS0 = vm.add_io_device<device::uart>(0x3f8, 8, 4, &term); // ttyS0
+      vm.add_io_device<device::uart>(0x2f8, 8, 3, nullptr);       // ttyS1
+      vm.add_io_device<device::uart>(0x3e8, 8, 4, nullptr);       // ttyS2
+      vm.add_io_device<device::uart>(0x2e8, 8, 3, nullptr);       // ttyS3
+
+      vm.add_mmio_device<virtio::blk>(0xd0000000, 0x1000, 12, disk);
+      vm.add_mmio_device<virtio::rng>(0xd0001000, 0x1000, 13);
 
       std::thread vm_thread(&vm::run, &vm, false);
       std::thread terminal_thread(&vmm::read_terminal, this);
@@ -67,34 +72,8 @@ namespace kvm {
         if (!term.readable(-1)) {
           break;
         }
-        vm.write_stdio();
+        ttyS0->write_stdio();
       }
-    }
-
-    void setup_bootparams() {
-      const std::string cmdline = "console=ttyS0 virtio_mmio.device=4K@0xd0000000:12 virtio_mmio.device=0x100@0xd0001000:13 reboot=k panic=1 noapic noacpi pci=off root=/dev/vda init=/sbin/init";
-
-      struct boot_params *boot = reinterpret_cast<struct boot_params *>(vm.memory_ptr() + ZERO_PAGE_START);
-      memset(boot, 0, sizeof(struct boot_params));
-
-      memcpy(vm.memory_ptr() + CMDLINE_START, cmdline.data(), cmdline.size());
-
-      boot->e820_table[boot->e820_entries].addr = 0;
-      boot->e820_table[boot->e820_entries].size = EBDA_START;
-      boot->e820_table[boot->e820_entries].type = E820_RAM;
-      boot->e820_entries += 1;
-
-      boot->e820_table[boot->e820_entries].addr = HIMEM_START;
-      boot->e820_table[boot->e820_entries].size = memory_size - HIMEM_START;
-      boot->e820_table[boot->e820_entries].type = E820_RAM;
-      boot->e820_entries += 1;
-
-      boot->hdr.type_of_loader = KERNEL_LOADER_OTHER;
-      boot->hdr.boot_flag = KERNEL_BOOT_FLAG_MAGIC;
-      boot->hdr.header = KERNEL_HDR_MAGIC;
-      boot->hdr.cmd_line_ptr = CMDLINE_START;
-      boot->hdr.cmdline_size = cmdline.size();
-      boot->hdr.kernel_alignment = KERNEL_MIN_ALIGNMENT_BYTES;
     }
 
   private:
@@ -103,6 +82,8 @@ namespace kvm {
     ::kvm::kvm kvm;
     os::terminal term;
     ::kvm::vm vm;
+
+    device::uart *ttyS0;
   };
 
 } // namespace kvm

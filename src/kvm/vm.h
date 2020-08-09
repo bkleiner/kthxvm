@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 
 #include "kvm.h"
+#include "layout.h"
 #include "vcpu.h"
 
 #include "device/rtc.h"
@@ -21,14 +22,15 @@
 #include "virtio/mmio.h"
 
 namespace kvm {
+  static constexpr __u64 KERNEL_BOOT_FLAG_MAGIC = 0xaa55;
+  static constexpr __u64 KERNEL_HDR_MAGIC = 0x53726448;
+  static constexpr __u64 KERNEL_LOADER_OTHER = 0xff;
+  static constexpr __u64 KERNEL_MIN_ALIGNMENT_BYTES = 0x1000000;
+
   class vm {
   public:
-    vm(kvm &k, ::os::terminal *term, int ncpus, size_t mem, std::string disk)
-        : fd(k.create_vm())
-        , ttyS0(4, term)
-        , ttyS1(3, nullptr)
-        , ttyS2(4, nullptr)
-        , ttyS3(3, nullptr) {
+    vm(kvm &k, int ncpus, size_t mem)
+        : fd(k.create_vm()) {
 
       if (fd < 0)
         throw std::runtime_error("kvm vm create failed");
@@ -39,11 +41,6 @@ namespace kvm {
       create_irq_chip();
       create_pit();
       create_vcpu(k);
-
-      register_irq(ttyS0.interrupt);
-
-      mmio.add_device<virtio::blk>(0xd0000000, 0x1000, 12, disk);
-      mmio.add_device<virtio::rng>(0xd0001000, 0x1000, 13);
     }
 
     __u8 *memory_ptr() {
@@ -80,20 +77,39 @@ namespace kvm {
         ioctl_err("KVM_ENABLE_CAP");
     }
 
-    void handle_uart(kvm_run *kvm_run, device::uart &uart, __u16 port, __u32 interrupt) {
-      auto offset = kvm_run->io.port - port;
+    template <class device_type, typename... arg_types>
+    device_type *add_io_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
+      auto ptr = new device_type{addr, width, interrupt, std::forward<arg_types>(args)...};
+      if (interrupt) {
+        register_irq(ptr->interrupt);
+      }
+      io_devices.emplace_back(ptr);
+      return ptr;
+    }
+
+    template <class device_type, typename... arg_types>
+    void add_mmio_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
+      mmio.add_device<device_type>(addr, width, interrupt, std::forward<arg_types>(args)...);
+    }
+
+    void handle_io_device(kvm_run *kvm_run, device::io_device &dev) {
+      auto offset = dev.offset(kvm_run->io.port);
 
       if (kvm_run->io.direction == KVM_EXIT_IO_IN) {
         auto size = kvm_run->io.count * kvm_run->io.size;
-        auto buf = uart.read(offset, size);
+        auto buf = dev.read(offset, size);
 
-        auto ptr = (char *)kvm_run + kvm_run->io.data_offset;
+        auto ptr = (__u8 *)kvm_run + kvm_run->io.data_offset;
         memcpy(ptr, buf.data(), buf.size());
-      } else if (kvm_run->io.direction == KVM_EXIT_IO_OUT) {
-        auto size = kvm_run->io.count * kvm_run->io.size;
-        auto data = (char *)kvm_run + kvm_run->io.data_offset;
+        return;
+      }
 
-        uart.write(data, offset, size);
+      if (kvm_run->io.direction == KVM_EXIT_IO_OUT) {
+        auto size = kvm_run->io.count * kvm_run->io.size;
+        auto data = (__u8 *)kvm_run + kvm_run->io.data_offset;
+
+        dev.write(data, offset, size);
+        return;
       }
     }
 
@@ -103,24 +119,11 @@ namespace kvm {
 
         switch (kvm_run->exit_reason) {
         case KVM_EXIT_IO:
-          if (kvm_run->io.port >= 0x3f8 && kvm_run->io.port < (0x3f8 + 8)) {
-            handle_uart(kvm_run, ttyS0, 0x3f8, 4);
-            break;
-          }
-
-          if (kvm_run->io.port >= 0x2f8 && kvm_run->io.port < (0x2f8 + 8)) {
-            handle_uart(kvm_run, ttyS1, 0x2f8, 3);
-            break;
-          }
-
-          if (kvm_run->io.port >= 0x3e8 && kvm_run->io.port < (0x3e8 + 8)) {
-            handle_uart(kvm_run, ttyS2, 0x3e8, 4);
-            break;
-          }
-
-          if (kvm_run->io.port >= 0x2e8 && kvm_run->io.port < (0x2e8 + 8)) {
-            handle_uart(kvm_run, ttyS3, 0x2e8, 3);
-            break;
+          for (auto &dev : io_devices) {
+            if (dev->in_range(kvm_run->io.port)) {
+              handle_io_device(kvm_run, *dev);
+              goto break_label;
+            }
           }
 
           /* currently breaks uart. no idea why
@@ -169,7 +172,7 @@ namespace kvm {
               kvm_run->io.size,
               kvm_run->io.count,
               *((char *)kvm_run + kvm_run->io.data_offset));
-
+        break_label:
           break;
         case KVM_EXIT_MMIO: {
           if (!kvm_run->mmio.is_write) {
@@ -206,10 +209,6 @@ namespace kvm {
         }
       }
       return 1;
-    }
-
-    size_t write_stdio() {
-      return ttyS0.write_stdio();
     }
 
   private:
@@ -278,14 +277,34 @@ namespace kvm {
     size_t memory_size;
 
     std::unique_ptr<vcpu> cpu;
+    std::vector<std::unique_ptr<device::io_device>> io_devices;
+
     device::rtc rtc;
-
-    device::uart ttyS0;
-    device::uart ttyS1;
-    device::uart ttyS2;
-    device::uart ttyS3;
-
     virtio::mmio mmio;
   };
+
+  void setup_bootparams(vm &vm, const std::string cmdline, __u64 memory_size) {
+    struct boot_params *boot = reinterpret_cast<struct boot_params *>(vm.memory_ptr() + ZERO_PAGE_START);
+    memset(boot, 0, sizeof(struct boot_params));
+
+    memcpy(vm.memory_ptr() + CMDLINE_START, cmdline.data(), cmdline.size());
+
+    boot->e820_table[boot->e820_entries].addr = 0;
+    boot->e820_table[boot->e820_entries].size = EBDA_START;
+    boot->e820_table[boot->e820_entries].type = E820_RAM;
+    boot->e820_entries += 1;
+
+    boot->e820_table[boot->e820_entries].addr = HIMEM_START;
+    boot->e820_table[boot->e820_entries].size = memory_size - HIMEM_START;
+    boot->e820_table[boot->e820_entries].type = E820_RAM;
+    boot->e820_entries += 1;
+
+    boot->hdr.type_of_loader = KERNEL_LOADER_OTHER;
+    boot->hdr.boot_flag = KERNEL_BOOT_FLAG_MAGIC;
+    boot->hdr.header = KERNEL_HDR_MAGIC;
+    boot->hdr.cmd_line_ptr = CMDLINE_START;
+    boot->hdr.cmdline_size = cmdline.size();
+    boot->hdr.kernel_alignment = KERNEL_MIN_ALIGNMENT_BYTES;
+  }
 
 } // namespace kvm

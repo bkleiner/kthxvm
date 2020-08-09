@@ -49,11 +49,15 @@ namespace kvm::virtio {
     __u8 status = VIRTIO_DEVICE_RESET;
   };
 
-  template <size_t queue_count>
+  template <__u32 dev_id, size_t queue_count>
   class queue_device : public device {
   public:
-    virtual queue &q() {
+    queue &q() override {
       return queues[queue_index];
+    }
+
+    __u32 device_id() override {
+      return dev_id;
     }
 
   protected:

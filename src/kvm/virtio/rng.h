@@ -5,14 +5,13 @@
 #include <fmt/format.h>
 
 #include <asm/types.h>
-#include <linux/virtio_blk.h>
-#include <linux/virtio_config.h>
+#include <linux/virtio_rng.h>
 
 #include "device.h"
 
 namespace kvm::virtio {
 
-  class rng : public queue_device<1> {
+  class rng : public queue_device<VIRTIO_ID_RNG, 1> {
   public:
     rng()
         : file("/dev/random") {
@@ -28,10 +27,6 @@ namespace kvm::virtio {
 
     void write(__u8 *data, __u64 offset, __u32 size) {
       fmt::print("kvm::virtio::rng invalid config write at {:#x}\n", offset);
-    }
-
-    __u32 device_id() {
-      return VIRTIO_ID_RNG;
     }
 
     __u32 features() {
