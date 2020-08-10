@@ -88,7 +88,7 @@ namespace kvm {
     template <class device_type, typename... arg_types>
     void add_mmio_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
       auto irq = register_irq(interrupt);
-      mmio.add_device<device_type>(addr, width, irq, std::forward<arg_types>(args)...);
+      mmio.add_device<device_type>(addr, width, irq, memory_ptr(), std::forward<arg_types>(args)...);
     }
 
     void handle_io_device(kvm_run *kvm_run, device::io_device &dev) {

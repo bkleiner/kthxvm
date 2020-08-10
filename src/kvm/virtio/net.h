@@ -49,8 +49,8 @@ namespace kvm::virtio {
     static constexpr __u8 tx_queue = 1;
     static constexpr __u8 ctrl_queue = 2;
 
-    net(::kvm::interrupt *irq)
-        : queue_device<VIRTIO_ID_NET, 3>(irq) {
+    net(::kvm::interrupt *irq, __u8 *ptr)
+        : queue_device<VIRTIO_ID_NET, 3>(irq, ptr) {
       tap = create_tap("tap0");
       memcpy(config.mac, default_mac, 6);
     }
@@ -96,13 +96,13 @@ namespace kvm::virtio {
         return;
       }
 
-      queue::descriptor_elem_t *next = q.next(ptr);
+      queue::descriptor_elem_t *next = q.next();
       if (next == nullptr) {
         return;
       }
 
       __u32 len = 0;
-      __u32 desc_start = q.avail_id(ptr);
+      __u32 desc_start = q.avail_id();
 
       while (true) {
         ssize_t ret = ::read(tap, ptr + next->addr, next->len);
@@ -116,23 +116,23 @@ namespace kvm::virtio {
           break;
         }
 
-        next = &q.desc(ptr)->ring[next->next];
+        next = &q.desc()->ring[next->next];
         if (!(next->flags & VRING_DESC_F_NEXT))
           break;
       }
 
-      q.add_used(ptr, desc_start, len);
+      q.add_used(desc_start, len);
       irq->set_level(true);
     }
 
     void update_tx(__u8 *ptr, queue &q) {
-      queue::descriptor_elem_t *next = q.next(ptr);
+      queue::descriptor_elem_t *next = q.next();
       if (next == nullptr) {
         return;
       }
 
       __u32 len = 0;
-      __u32 desc_start = q.avail_id(ptr);
+      __u32 desc_start = q.avail_id();
 
       virtio_net_hdr *hdr = reinterpret_cast<virtio_net_hdr *>(ptr + next->addr);
       ssize_t ret = ::write(tap, ptr + next->addr, next->len);
@@ -142,20 +142,20 @@ namespace kvm::virtio {
       }
       len += ret;
 
-      q.add_used(ptr, desc_start, len);
+      q.add_used(desc_start, len);
       irq->set_level(true);
     }
 
     void update_ctrl(__u8 *ptr, queue &q) {
-      queue::descriptor_elem_t *next = q.next(ptr);
+      queue::descriptor_elem_t *next = q.next();
       if (next == nullptr) {
         return;
       }
 
       __u32 len = 0;
-      __u32 desc_start = q.avail_id(ptr);
+      __u32 desc_start = q.avail_id();
 
-      q.add_used(ptr, desc_start, len);
+      q.add_used(desc_start, len);
       irq->set_level(true);
     }
 

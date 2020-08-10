@@ -13,8 +13,8 @@ namespace kvm::virtio {
 
   class rng : public queue_device<VIRTIO_ID_RNG, 1> {
   public:
-    rng(::kvm::interrupt *irq)
-        : queue_device<VIRTIO_ID_RNG, 1>(irq)
+    rng(::kvm::interrupt *irq, __u8 *ptr)
+        : queue_device<VIRTIO_ID_RNG, 1>(irq, ptr)
         , file("/dev/random") {
       if (!file.is_open())
         throw std::runtime_error(fmt::format("could not open file {}", "/dev/random"));
@@ -39,18 +39,18 @@ namespace kvm::virtio {
     }
 
     void update(__u8 *ptr) {
-      queue::descriptor_elem_t *next = q().next(ptr);
+      queue::descriptor_elem_t *next = q().next();
       if (next == nullptr) {
         return;
       }
 
       __u32 len = 0;
-      __u32 desc_start = q().avail_id(ptr);
+      __u32 desc_start = q().avail_id();
 
       file.read((char *)(ptr + next->addr), next->len);
       len += next->len;
 
-      q().add_used(ptr, desc_start, len);
+      q().add_used(desc_start, len);
       irq->set_level(true);
     }
 

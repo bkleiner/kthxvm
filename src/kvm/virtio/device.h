@@ -65,15 +65,19 @@ namespace kvm::virtio {
   template <__u32 dev_id, size_t queue_count>
   class queue_device : public device {
   public:
-    queue_device(::kvm::interrupt *irq)
-        : device(irq) {}
+    queue_device(::kvm::interrupt *irq, __u8 *ptr)
+        : device(irq) {
+      for (size_t i = 0; i < queue_count; i++) {
+        queues[i] = std::make_unique<queue>(ptr);
+      }
+    }
 
     queue &q(__u32 index) override {
-      return queues[index];
+      return *queues[index];
     }
 
     queue &q() override {
-      return queues[queue_index];
+      return *queues[queue_index];
     }
 
     __u32 device_id() override {
@@ -81,7 +85,7 @@ namespace kvm::virtio {
     }
 
   protected:
-    std::array<queue, queue_count> queues;
+    std::array<std::unique_ptr<queue>, queue_count> queues;
   };
 
 } // namespace kvm::virtio

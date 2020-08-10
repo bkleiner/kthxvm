@@ -29,9 +29,9 @@ namespace kvm::virtio {
     static constexpr __u32 VIRT_VENDOR = 0x4b544858; // 'KTHX'
 
     template <typename... arg_types>
-    mmio_device_holder(__u64 addr, __u64 width, ::kvm::interrupt *irq, arg_types &&... args)
+    mmio_device_holder(__u64 addr, __u64 width, ::kvm::interrupt *irq, __u8 *ptr, arg_types &&... args)
         : mmio_device(addr, width, irq)
-        , dev(irq, std::forward<arg_types>(args)...) {
+        , dev(irq, ptr, std::forward<arg_types>(args)...) {
     }
 
     std::vector<__u8> read(__u64 offset, __u32 size) {
@@ -67,7 +67,7 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_QUEUE_READY:
-        *((__u32 *)buf.data()) = dev.q().ready;
+        *((__u32 *)buf.data()) = dev.q().is_ready() ? 0x1 : 0x0;
         break;
 
       case VIRTIO_MMIO_CONFIG_GENERATION:
@@ -148,11 +148,11 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_QUEUE_READY:
-        dev.q().ready = value;
+        dev.q().set_ready();
         break;
 
       case VIRTIO_MMIO_QUEUE_NOTIFY:
-        dev.q(value).do_notify();
+        dev.q(value).set_notify();
         break;
 
       case VIRTIO_MMIO_QUEUE_DESC_LOW:
@@ -222,11 +222,12 @@ namespace kvm::virtio {
     }
 
     template <class device_type, typename... arg_types>
-    void add_device(__u64 addr, __u64 width, ::kvm::interrupt *irq, arg_types &&... args) {
+    void add_device(__u64 addr, __u64 width, ::kvm::interrupt *irq, __u8 *ptr, arg_types &&... args) {
       devices.emplace_back(new mmio_device_holder<device_type>{
           addr,
           width,
           irq,
+          ptr,
           std::forward<arg_types>(args)...,
       });
     }

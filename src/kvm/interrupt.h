@@ -12,7 +12,8 @@ namespace kvm {
   public:
     interrupt(__u32 num)
         : number(num)
-        , fd(eventfd(0, 0)) {}
+        , fd(eventfd(0, 0))
+        , state(false) {}
 
     void set_level(bool new_state) {
       if (state == new_state) {
@@ -44,7 +45,7 @@ namespace kvm {
     __u32 number;
     __u32 fd;
 
-    bool state = false;
+    std::atomic_bool state;
   };
 
 } // namespace kvm

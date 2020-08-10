@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <asm/types.h>
 
 #include "barrier.h"
@@ -40,52 +42,69 @@ namespace kvm::virtio {
       __u16 avail_event;
     } __attribute__((aligned(4)));
 
-    inline descriptor_t *desc(__u8 *ptr) {
+    queue(__u8 *ptr)
+        : ptr(ptr)
+        , notify(false)
+        , ready(false) {}
+
+    inline descriptor_t *desc() {
       return reinterpret_cast<descriptor_t *>(ptr + desc_addr);
     }
 
-    inline avail_t *avail(__u8 *ptr) {
+    inline avail_t *avail() {
       return reinterpret_cast<avail_t *>(ptr + avail_addr);
     }
 
-    inline __u16 avail_id(__u8 *ptr) {
-      return avail(ptr)->ring[(last_avail - 1) % size];
-    }
-
-    inline used_t *used(__u8 *ptr) {
+    inline used_t *used() {
       return reinterpret_cast<used_t *>(ptr + used_addr);
     }
 
-    descriptor_elem_t *next(__u8 *ptr) {
+    inline __u16 avail_id() {
+      return avail()->ring[(last_avail - 1) % size];
+    }
+
+    descriptor_elem_t *next() {
       if (!notify || !ready) {
         return nullptr;
       }
       notify = false;
 
       rmb();
-      if (avail(ptr)->idx <= last_avail) {
+      if (avail()->idx <= last_avail) {
         return nullptr;
       }
       last_avail++;
-      return &desc(ptr)->ring[avail_id(ptr)];
+      return &desc()->ring[avail_id()];
     }
 
-    __u16 add_used(__u8 *ptr, __u32 start, __u32 len) {
+    __u16 add_used(__u32 start, __u32 len) {
       wmb();
-      used(ptr)->ring[used(ptr)->idx % size].len = len;
-      used(ptr)->ring[used(ptr)->idx % size].id = start;
-      used(ptr)->idx++;
+      used()->ring[used()->idx % size].len = len;
+      used()->ring[used()->idx % size].id = start;
+      used()->idx++;
       wmb();
-      return used(ptr)->idx;
+      return used()->idx;
     }
 
-    void do_notify() {
+    void set_notify() {
       notify = true;
+    }
+
+    void set_ready() {
+      ready = true;
+    }
+
+    bool is_ready() {
+      return ready;
+    }
+
+    template <class T>
+    T *translate(__u64 addr) {
+      return reinterpret_cast<T *>(ptr + addr);
     }
 
   public:
     __u32 size = 0;
-    __u32 ready = 0;
 
     __u64 desc_addr = 0;
     __u64 avail_addr = 0;
@@ -94,7 +113,10 @@ namespace kvm::virtio {
     __u32 last_avail = 0;
 
   private:
-    bool notify = false;
+    __u8 *ptr;
+
+    std::atomic_bool notify;
+    std::atomic_bool ready;
   };
 
 } // namespace kvm::virtio
