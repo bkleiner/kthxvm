@@ -37,6 +37,8 @@ namespace kvm::virtio {
       config.capacity = file.tellg() / 512;
       config.size_max = 32768;
       config.seg_max = queue::QUEUE_SIZE_MAX / 2;
+
+      run_thread = std::thread(&blk::run, this);
     }
 
     std::vector<__u8> read(__u64 offset, __u32 size) {
@@ -71,70 +73,78 @@ namespace kvm::virtio {
       return generation;
     }
 
+    void run() {
+      while (true) {
+        queue::descriptor_elem_t *next = q().next();
+        if (next == nullptr) {
+          //return;
+          continue;
+        }
+
+        __u32 len = 0;
+        __u32 desc_start = q().avail_id();
+
+        req_header *hdr = q().translate<req_header>(next->addr);
+        switch (hdr->type) {
+        case VIRTIO_BLK_T_IN: {
+          next = &q().desc()->ring[next->next];
+          //fmt::print("kvm::virtio::blk read at {:#x} ({})\n", hdr->sector * 512, next->len);
+
+          file.seekg(hdr->sector * 512);
+          while (next->flags & VRING_DESC_F_NEXT) {
+            file.read(q().translate<char>(next->addr), next->len);
+            len += next->len;
+            next = &q().desc()->ring[next->next];
+          }
+
+          *q().translate<__u8>(next->addr) = VIRTIO_BLK_S_OK;
+          len += 1;
+          break;
+        }
+
+        case VIRTIO_BLK_T_OUT: {
+          next = &q().desc()->ring[next->next];
+          //fmt::print("kvm::virtio::blk write at {:#x} ({})\n", hdr->sector * 512, next->len);
+
+          file.seekp(hdr->sector * 512);
+          while (next->flags & VRING_DESC_F_NEXT) {
+            file.write(q().translate<char>(next->addr), next->len);
+            file.flush();
+            len += next->len;
+            next = &q().desc()->ring[next->next];
+          }
+
+          *q().translate<__u8>(next->addr) = VIRTIO_BLK_S_OK;
+          len += 1;
+          break;
+        }
+
+        case VIRTIO_BLK_T_GET_ID: {
+          next = &q().desc()->ring[next->next];
+          memcpy(q().translate<char>(next->addr), DISK_ID, next->len);
+          len += next->len;
+
+          next = &q().desc()->ring[next->next];
+          *q().translate<__u8>(next->addr) = VIRTIO_BLK_S_OK;
+          len += 1;
+          break;
+        }
+
+        default:
+          fmt::print("kvm::virtio::blk unhandled request {}\n", hdr->type);
+          continue;
+          //return;
+        }
+
+        const __u16 idx = q().add_used(desc_start, len);
+
+        if ((idx - 1) == q().avail()->used_event) {
+          irq->set_level(true);
+        }
+      }
+    }
+
     void update(__u8 *ptr) override {
-      queue::descriptor_elem_t *next = q().next();
-      if (next == nullptr) {
-        return;
-      }
-
-      __u32 len = 0;
-      __u32 desc_start = q().avail_id();
-
-      req_header *hdr = q().translate<req_header>(next->addr);
-      switch (hdr->type) {
-      case VIRTIO_BLK_T_IN: {
-        next = &q().desc()->ring[next->next];
-        //fmt::print("kvm::virtio::blk read at {:#x} ({})\n", hdr->sector * 512, next->len);
-
-        file.seekg(hdr->sector * 512);
-        while (next->flags & VRING_DESC_F_NEXT) {
-          file.read(q().translate<char>(next->addr), next->len);
-          len += next->len;
-          next = &q().desc()->ring[next->next];
-        }
-
-        *q().translate<__u8>(next->addr) = VIRTIO_BLK_S_OK;
-        len += 1;
-        break;
-      }
-
-      case VIRTIO_BLK_T_OUT: {
-        next = &q().desc()->ring[next->next];
-        //fmt::print("kvm::virtio::blk write at {:#x} ({})\n", hdr->sector * 512, next->len);
-
-        file.seekp(hdr->sector * 512);
-        while (next->flags & VRING_DESC_F_NEXT) {
-          file.write(q().translate<char>(next->addr), next->len);
-          file.flush();
-          len += next->len;
-          next = &q().desc()->ring[next->next];
-        }
-
-        *q().translate<__u8>(next->addr) = VIRTIO_BLK_S_OK;
-        len += 1;
-        break;
-      }
-
-      case VIRTIO_BLK_T_GET_ID: {
-        next = &q().desc()->ring[next->next];
-        memcpy(q().translate<char>(next->addr), DISK_ID, next->len);
-        len += next->len;
-
-        next = &q().desc()->ring[next->next];
-        *q().translate<__u8>(next->addr) = VIRTIO_BLK_S_OK;
-        len += 1;
-        break;
-      }
-
-      default:
-        fmt::print("kvm::virtio::blk unhandled request {}\n", hdr->type);
-        //continue;
-        return;
-      }
-
-      if ((q().add_used(desc_start, len) - 1) == q().avail()->used_event) {
-        irq->set_level(true);
-      }
     }
 
   private:
@@ -142,6 +152,8 @@ namespace kvm::virtio {
 
     virtio_blk_config config;
     __u32 generation = 0;
+
+    std::thread run_thread;
   };
 
 } // namespace kvm::virtio

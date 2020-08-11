@@ -1,6 +1,6 @@
 #pragma once
 
-#include <atomic>
+#include <mutex>
 
 #include <asm/types.h>
 
@@ -44,7 +44,7 @@ namespace kvm::virtio {
 
     queue(__u8 *ptr)
         : ptr(ptr)
-        , notify(false)
+        , notify(0)
         , ready(false) {}
 
     inline descriptor_t *desc() {
@@ -64,10 +64,13 @@ namespace kvm::virtio {
     }
 
     descriptor_elem_t *next() {
-      if (!notify || !ready) {
-        return nullptr;
+      {
+        const std::lock_guard<std::mutex> lock(mu);
+        if (!notify || !ready) {
+          return nullptr;
+        }
+        notify--;
       }
-      notify = false;
 
       rmb();
       if (avail()->idx <= last_avail) {
@@ -87,14 +90,17 @@ namespace kvm::virtio {
     }
 
     void set_notify() {
-      notify = true;
+      const std::lock_guard<std::mutex> lock(mu);
+      notify++;
     }
 
     void set_ready() {
+      const std::lock_guard<std::mutex> lock(mu);
       ready = true;
     }
 
     bool is_ready() {
+      const std::lock_guard<std::mutex> lock(mu);
       return ready;
     }
 
@@ -115,8 +121,10 @@ namespace kvm::virtio {
   private:
     __u8 *ptr;
 
-    std::atomic_bool notify;
-    std::atomic_bool ready;
+    __u64 notify;
+    bool ready;
+
+    std::mutex mu;
   };
 
 } // namespace kvm::virtio

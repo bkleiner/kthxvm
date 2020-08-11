@@ -41,7 +41,7 @@ namespace kvm {
       std::string cmdline = "console=ttyS0";
       cmdline += " virtio_mmio.device=0x1000@0xd0000000:12";
       cmdline += " virtio_mmio.device=0x1000@0xd0001000:13";
-      //cmdline += " virtio_mmio.device=0x1000@0xd0002000:14";
+      cmdline += " virtio_mmio.device=0x1000@0xd0002000:14";
       cmdline += " reboot=k panic=1 pci=off";
       cmdline += " root=/dev/vda init=/sbin/init";
 
@@ -67,7 +67,7 @@ namespace kvm {
 
       vm.add_mmio_device<virtio::blk>(0xd0000000, 0x1000, 12, disk);
       vm.add_mmio_device<virtio::rng>(0xd0001000, 0x1000, 13);
-      //vm.add_mmio_device<virtio::net>(0xd0002000, 0x1000, 14);
+      vm.add_mmio_device<virtio::net>(0xd0002000, 0x1000, 14);
 
       std::thread vm_thread(&vm::run, &vm, false);
       std::thread terminal_thread(&vmm::read_terminal, this);

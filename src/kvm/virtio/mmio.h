@@ -175,7 +175,9 @@ namespace kvm::virtio {
         break;
 
       case VIRTIO_MMIO_INTERRUPT_ACK:
-        dev.irq_ack();
+        if (value == 0x1) {
+          dev.irq_ack();
+        }
         break;
 
       default:

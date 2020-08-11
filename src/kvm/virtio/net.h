@@ -1,5 +1,8 @@
 #pragma once
 
+#define VIRTIO_NET_NO_LEGACY
+
+#include <algorithm>
 #include <vector>
 
 #include <fmt/format.h>
@@ -53,6 +56,9 @@ namespace kvm::virtio {
         : queue_device<VIRTIO_ID_NET, 3>(irq, ptr) {
       tap = create_tap("tap0");
       memcpy(config.mac, default_mac, 6);
+
+      run_tx_thread = std::thread(&net::run_tx, this);
+      run_rx_thread = std::thread(&net::run_rx, this);
     }
 
     std::vector<__u8> read(__u64 offset, __u32 size) {
@@ -81,61 +87,81 @@ namespace kvm::virtio {
       return 1UL << VIRTIO_NET_F_MAC |
              1UL << VIRTIO_NET_F_CSUM |
              1UL << VIRTIO_NET_F_HOST_TSO4 |
-             1UL << VIRTIO_NET_F_HOST_TSO6 |
              1UL << VIRTIO_NET_F_GUEST_TSO4 |
+             1UL << VIRTIO_NET_F_HOST_TSO6 |
              1UL << VIRTIO_NET_F_GUEST_TSO6 |
-             1UL << VIRTIO_NET_F_CTRL_VQ;
+             1UL << VIRTIO_NET_F_HOST_UFO |
+             1UL << VIRTIO_NET_F_GUEST_UFO;
     }
 
     __u32 config_generation() {
       return generation;
     }
 
-    void update_rx(__u8 *ptr, queue &q) {
-      if (!::kvm::poll_fd_in(tap, 0)) {
-        return;
-      }
-
+    void update_rx(queue &q) {
       queue::descriptor_elem_t *next = q.next();
       if (next == nullptr) {
         return;
       }
 
+      if (!::kvm::poll_fd_in(tap, -1)) {
+        return;
+      }
+
+      const __u64 buffer_len = 65550 + sizeof(virtio_net_hdr_v1);
+      static __u8 buffer[buffer_len];
+
+      ssize_t size = ::read(tap, buffer, buffer_len);
+      if (size < 0) {
+        auto msg = errno_msg("tap read");
+        ioctl_warn("tap read");
+      }
+
       __u32 len = 0;
+      __u32 written = 0;
       __u32 desc_start = q.avail_id();
-
       while (true) {
-        ssize_t ret = ::read(tap, ptr + next->addr, next->len);
-        if (ret < 0) {
-          auto msg = errno_msg("tap read");
-          ioctl_warn("tap read");
-        }
-        len += ret;
+        size_t write_len = std::min(__u32(size - len), next->len);
+        memcpy(q.translate<__u8>(next->addr), buffer + len, write_len);
+        len += write_len;
 
-        if (ret < next->len) {
+        if (len == size)
           break;
-        }
 
-        next = &q.desc()->ring[next->next];
         if (!(next->flags & VRING_DESC_F_NEXT))
           break;
+
+        next = &q.desc()->ring[next->next];
       }
 
       q.add_used(desc_start, len);
       irq->set_level(true);
     }
 
-    void update_tx(__u8 *ptr, queue &q) {
+    void update_tx(queue &q) {
       queue::descriptor_elem_t *next = q.next();
       if (next == nullptr) {
         return;
       }
 
       __u32 len = 0;
+      __u32 written = 0;
       __u32 desc_start = q.avail_id();
 
-      virtio_net_hdr *hdr = reinterpret_cast<virtio_net_hdr *>(ptr + next->addr);
-      ssize_t ret = ::write(tap, ptr + next->addr, next->len);
+      const __u64 buffer_len = 65550 + sizeof(virtio_net_hdr_v1);
+      static __u8 buffer[buffer_len];
+
+      while (true) {
+        memcpy(buffer + written, q.translate<__u8>(next->addr), next->len);
+        written += next->len;
+
+        if (!(next->flags & VRING_DESC_F_NEXT))
+          break;
+
+        next = &q.desc()->ring[next->next];
+      }
+
+      ssize_t ret = ::write(tap, buffer, written);
       if (ret < 0) {
         auto msg = errno_msg("tap write");
         ioctl_warn("tap write");
@@ -159,9 +185,19 @@ namespace kvm::virtio {
       irq->set_level(true);
     }
 
+    void run_rx() {
+      while (true) {
+        update_rx(q(rx_queue));
+      }
+    }
+
+    void run_tx() {
+      while (true) {
+        update_tx(q(tx_queue));
+      }
+    }
+
     void update(__u8 *ptr) {
-      update_rx(ptr, q(rx_queue));
-      update_tx(ptr, q(tx_queue));
 
       //update_ctrl(ptr, q(ctrl_queue));
     }
@@ -180,9 +216,13 @@ namespace kvm::virtio {
       if (ioctl(fd, TUNSETIFF, &req) < 0)
         ioctl_err("TUNSETIFF");
 
-      int offload = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6;
+      int offload = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_UFO;
       if (ioctl(fd, TUNSETOFFLOAD, offload) < 0)
         ioctl_err("TUNSETOFFLOAD");
+
+      int hdr_len = sizeof(virtio_net_hdr_v1);
+      if (ioctl(fd, TUNSETVNETHDRSZ, &hdr_len) < 0)
+        ioctl_err("TUNSETVNETHDRSZ");
 
       if (exec_script(".vscode/setup_tap.sh", name) < 0)
         ioctl_err("exec_script");
@@ -196,6 +236,9 @@ namespace kvm::virtio {
     __u32 generation = 0;
 
     const __u8 default_mac[6] = {0x02, 0x15, 0x15, 0x15, 0x15, 0x15};
+
+    std::thread run_tx_thread;
+    std::thread run_rx_thread;
   };
 
 } // namespace kvm::virtio
