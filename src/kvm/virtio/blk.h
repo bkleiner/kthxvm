@@ -77,7 +77,6 @@ namespace kvm::virtio {
       while (true) {
         queue::descriptor_elem_t *next = q().next();
         if (next == nullptr) {
-          //return;
           continue;
         }
 
@@ -88,7 +87,6 @@ namespace kvm::virtio {
         switch (hdr->type) {
         case VIRTIO_BLK_T_IN: {
           next = &q().desc()->ring[next->next];
-          //fmt::print("kvm::virtio::blk read at {:#x} ({})\n", hdr->sector * 512, next->len);
 
           file.seekg(hdr->sector * 512);
           while (next->flags & VRING_DESC_F_NEXT) {
@@ -104,7 +102,6 @@ namespace kvm::virtio {
 
         case VIRTIO_BLK_T_OUT: {
           next = &q().desc()->ring[next->next];
-          //fmt::print("kvm::virtio::blk write at {:#x} ({})\n", hdr->sector * 512, next->len);
 
           file.seekp(hdr->sector * 512);
           while (next->flags & VRING_DESC_F_NEXT) {
@@ -133,7 +130,6 @@ namespace kvm::virtio {
         default:
           fmt::print("kvm::virtio::blk unhandled request {}\n", hdr->type);
           continue;
-          //return;
         }
 
         const __u16 idx = q().add_used(desc_start, len);

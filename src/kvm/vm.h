@@ -213,7 +213,7 @@ namespace kvm {
         throw std::runtime_error("memory map failed");
       }
 
-      // madvise(memory, mem, MADV_MERGEABLE);
+      madvise(memory, mem, MADV_MERGEABLE);
 
       struct kvm_userspace_memory_region memreg {
         0,
