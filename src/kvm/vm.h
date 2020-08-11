@@ -158,11 +158,6 @@ namespace kvm {
             break;
           }
 
-          if (kvm_run->io.port == 0x60 || kvm_run->io.port == 0x64) {
-            // ps2 keyboard
-            break;
-          }
-
           fmt::print(
               "kvm::vcpu::io {} port {:#x} offset {:#x} size {} ({}) value {:#x}\n",
               kvm_run->io.direction == KVM_EXIT_IO_IN ? "in" : "out",
@@ -171,6 +166,7 @@ namespace kvm {
               kvm_run->io.size,
               kvm_run->io.count,
               *((char *)kvm_run + kvm_run->io.data_offset));
+
         break_label:
           break;
         case KVM_EXIT_MMIO: {
@@ -195,6 +191,7 @@ namespace kvm {
           fmt::print("kvm::vcpu halted\n");
           return 0;
         case KVM_EXIT_INTR:
+          fmt::print("kvm::vcpu KVM_EXIT_INTR\n");
           break;
         default:
           fmt::print("got exist reason {} from kvm_run\n", kvm_run->exit_reason);

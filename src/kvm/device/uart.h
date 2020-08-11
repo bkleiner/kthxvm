@@ -219,6 +219,7 @@ namespace kvm::device {
       } else {
         iir = tmp_iir;
         irq->set_level(true);
+        irq->set_level(false);
       }
 
       if (!(ier & IER_THR_BIT))

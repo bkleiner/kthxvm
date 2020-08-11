@@ -18,6 +18,7 @@
 #include "regs.h"
 #include "vm.h"
 
+#include "device/i8042.h"
 #include "device/rtc.h"
 #include "device/uart.h"
 
@@ -43,6 +44,7 @@ namespace kvm {
       cmdline += " virtio_mmio.device=0x1000@0xd0001000:13";
       cmdline += " virtio_mmio.device=0x1000@0xd0002000:14";
       cmdline += " reboot=k panic=1 pci=off";
+      cmdline += " i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd";
       cmdline += " root=/dev/vda init=/sbin/init";
 
       auto cpuid2 = kvm.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES);
@@ -59,6 +61,9 @@ namespace kvm {
       setup_irq_routing(vm);
       setup_bootparams(vm, cmdline, memory_size);
       setup_mptable(vm);
+
+      // keyboard
+      vm.add_io_device<device::i8042>(0x60, 5, 1);
 
       ttyS0 = vm.add_io_device<device::uart>(0x3f8, 8, 4, &term); // ttyS0
       vm.add_io_device<device::uart>(0x2f8, 8, 3, nullptr);       // ttyS1
