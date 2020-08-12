@@ -30,13 +30,14 @@ namespace kvm {
 
   class vmm {
   public:
-    static constexpr __u64 memory_size = 2 * 1024 * 1024 * 1024ul;
+    static constexpr __u64 MEMORY_SIZE_MB = 4 * 1024ul;
+    static constexpr __u64 MB_SHIFT = (20);
 
     vmm()
         : run_terminal(true)
         , kvm()
         , term()
-        , vm(kvm, 1, memory_size) {}
+        , vm(kvm, 1, MEMORY_SIZE_MB << MB_SHIFT) {}
 
     int start(std::string kernel, std::string disk) {
       std::string cmdline = "console=ttyS0";
@@ -59,7 +60,7 @@ namespace kvm {
       setup_long_mode(vm);
       setup_lapic(vm);
       setup_irq_routing(vm);
-      setup_bootparams(vm, cmdline, memory_size);
+      setup_bootparams(vm, cmdline);
       setup_mptable(vm);
 
       // keyboard

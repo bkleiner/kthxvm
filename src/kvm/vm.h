@@ -25,6 +25,10 @@ namespace kvm {
   static constexpr __u64 KERNEL_LOADER_OTHER = 0xff;
   static constexpr __u64 KERNEL_MIN_ALIGNMENT_BYTES = 0x1000000;
 
+  static constexpr __u64 KVM_32BIT_MAX_MEM_SIZE = (1ULL << 32);
+  static constexpr __u64 KVM_32BIT_GAP_SIZE = (768 << 20);
+  static constexpr __u64 KVM_32BIT_GAP_START = (KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE);
+
   class vm {
   public:
     vm(kvm &k, int ncpus, size_t mem)
@@ -39,6 +43,10 @@ namespace kvm {
       create_irq_chip();
       create_pit();
       create_vcpu(k);
+    }
+
+    ~vm() {
+      munmap(memory, memory_size);
     }
 
     __u8 *memory_ptr() {
@@ -201,11 +209,20 @@ namespace kvm {
       return 1;
     }
 
+    inline __u64 mem_size() {
+      return memory_size;
+    }
+
   private:
     void create_memory(size_t mem) {
+      memory_size = mem;
+      if (mem >= KVM_32BIT_GAP_START) {
+        memory_size += KVM_32BIT_GAP_SIZE;
+      }
+
       memory = reinterpret_cast<__u8 *>(mmap(
           NULL,
-          mem,
+          memory_size,
           PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
           -1,
           0));
@@ -213,22 +230,42 @@ namespace kvm {
         throw std::runtime_error("memory map failed");
       }
 
-      madvise(memory, mem, MADV_MERGEABLE);
+      madvise(memory, memory_size, MADV_MERGEABLE);
 
-      struct kvm_userspace_memory_region memreg {
-        0,
+      if (memory_size < KVM_32BIT_GAP_START) {
+        struct kvm_userspace_memory_region memreg = {
             0,
             0,
-            mem,
-            (unsigned long)memory
-      };
-      if (ioctl(fd, KVM_SET_USER_MEMORY_REGION, &memreg) < 0)
-        ioctl_err("KVM_SET_USER_MEMORY_REGION");
+            0,
+            memory_size,
+            (unsigned long)memory,
+        };
+        if (ioctl(fd, KVM_SET_USER_MEMORY_REGION, &memreg) < 0)
+          ioctl_err("KVM_SET_USER_MEMORY_REGION");
+      } else {
+        struct kvm_userspace_memory_region memreg = {
+            0,
+            0,
+            0,
+            KVM_32BIT_GAP_START,
+            (unsigned long)memory,
+        };
+        if (ioctl(fd, KVM_SET_USER_MEMORY_REGION, &memreg) < 0)
+          ioctl_err("KVM_SET_USER_MEMORY_REGION");
+
+        memreg = {
+            1,
+            0,
+            KVM_32BIT_MAX_MEM_SIZE,
+            memory_size - KVM_32BIT_MAX_MEM_SIZE,
+            (unsigned long)(memory + KVM_32BIT_MAX_MEM_SIZE),
+        };
+        if (ioctl(fd, KVM_SET_USER_MEMORY_REGION, &memreg) < 0)
+          ioctl_err("KVM_SET_USER_MEMORY_REGION");
+      }
 
       if (ioctl(fd, KVM_SET_TSS_ADDR, 0xfffbd000) < 0)
         ioctl_err("KVM_SET_TSS_ADDR");
-
-      memory_size = mem;
     }
 
     void create_irq_chip() {
@@ -273,7 +310,7 @@ namespace kvm {
     int fd;
 
     __u8 *memory;
-    size_t memory_size;
+    __u64 memory_size;
 
     std::array<std::unique_ptr<::kvm::interrupt>, 32> interrupts;
 
@@ -283,7 +320,7 @@ namespace kvm {
     virtio::mmio mmio;
   };
 
-  void setup_bootparams(vm &vm, const std::string cmdline, __u64 memory_size) {
+  void setup_bootparams(vm &vm, const std::string cmdline) {
     struct boot_params *boot = reinterpret_cast<struct boot_params *>(vm.memory_ptr() + ZERO_PAGE_START);
     memset(boot, 0, sizeof(struct boot_params));
 
@@ -294,10 +331,22 @@ namespace kvm {
     boot->e820_table[boot->e820_entries].type = E820_RAM;
     boot->e820_entries += 1;
 
-    boot->e820_table[boot->e820_entries].addr = HIMEM_START;
-    boot->e820_table[boot->e820_entries].size = memory_size - HIMEM_START;
-    boot->e820_table[boot->e820_entries].type = E820_RAM;
-    boot->e820_entries += 1;
+    if (vm.mem_size() < KVM_32BIT_GAP_START) {
+      boot->e820_table[boot->e820_entries].addr = HIMEM_START;
+      boot->e820_table[boot->e820_entries].size = vm.mem_size() - HIMEM_START;
+      boot->e820_table[boot->e820_entries].type = E820_RAM;
+      boot->e820_entries += 1;
+    } else {
+      boot->e820_table[boot->e820_entries].addr = HIMEM_START;
+      boot->e820_table[boot->e820_entries].size = KVM_32BIT_GAP_START - HIMEM_START;
+      boot->e820_table[boot->e820_entries].type = E820_RAM;
+      boot->e820_entries += 1;
+
+      boot->e820_table[boot->e820_entries].addr = KVM_32BIT_MAX_MEM_SIZE;
+      boot->e820_table[boot->e820_entries].size = vm.mem_size() - KVM_32BIT_MAX_MEM_SIZE;
+      boot->e820_table[boot->e820_entries].type = E820_RAM;
+      boot->e820_entries += 1;
+    }
 
     boot->hdr.type_of_loader = KERNEL_LOADER_OTHER;
     boot->hdr.boot_flag = KERNEL_BOOT_FLAG_MAGIC;
