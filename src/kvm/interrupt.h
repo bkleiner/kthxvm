@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include <asm/types.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -15,21 +17,23 @@ namespace kvm {
         , fd(eventfd(0, 0))
         , state(false) {}
 
-    void set_level(bool new_state) {
-      if (state == new_state) {
+    void set_level(bool update) {
+      const std::lock_guard<std::mutex> lock(mu);
+      if (state == update) {
         return;
       }
-      if (new_state) {
+      if (update) {
         __u64 value = 0x1;
         ssize_t ret = write(fd, &value, 8);
         if (ret < 0) {
           throw std::runtime_error(errno_msg("eventfd write failed"));
         }
       }
-      state = new_state;
+      state = update;
     }
 
     bool level() {
+      const std::lock_guard<std::mutex> lock(mu);
       return state;
     }
 
@@ -42,10 +46,12 @@ namespace kvm {
     }
 
   private:
+    std::mutex mu;
+
     __u32 number;
     __u32 fd;
 
-    std::atomic_bool state;
+    bool state;
   };
 
 } // namespace kvm

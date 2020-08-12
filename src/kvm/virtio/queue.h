@@ -43,20 +43,23 @@ namespace kvm::virtio {
     } __attribute__((aligned(4)));
 
     queue(__u8 *ptr)
-        : ptr(ptr)
-        , notify(0)
-        , ready(false) {}
+        : ptr(ptr) {}
+
+    template <class T>
+    inline T *translate(__u64 addr) {
+      return reinterpret_cast<T *>(ptr + addr);
+    }
 
     inline descriptor_t *desc() {
-      return reinterpret_cast<descriptor_t *>(ptr + desc_addr);
+      return translate<descriptor_t>(desc_addr);
     }
 
     inline avail_t *avail() {
-      return reinterpret_cast<avail_t *>(ptr + avail_addr);
+      return translate<avail_t>(avail_addr);
     }
 
     inline used_t *used() {
-      return reinterpret_cast<used_t *>(ptr + used_addr);
+      return translate<used_t>(used_addr);
     }
 
     inline __u16 avail_id() {
@@ -66,10 +69,9 @@ namespace kvm::virtio {
     descriptor_elem_t *next() {
       {
         const std::lock_guard<std::mutex> lock(mu);
-        if (!notify || !ready) {
+        if (!ready) {
           return nullptr;
         }
-        notify--;
       }
 
       rmb();
@@ -104,11 +106,6 @@ namespace kvm::virtio {
       return ready;
     }
 
-    template <class T>
-    T *translate(__u64 addr) {
-      return reinterpret_cast<T *>(ptr + addr);
-    }
-
   public:
     __u32 size = 0;
 
@@ -116,15 +113,13 @@ namespace kvm::virtio {
     __u64 avail_addr = 0;
     __u64 used_addr = 0;
 
-    __u32 last_avail = 0;
-
   private:
     __u8 *ptr;
-
-    __u64 notify;
-    bool ready;
-
     std::mutex mu;
+
+    __u64 notify = 0;
+    __u32 last_avail = 0;
+    bool ready = false;
   };
 
 } // namespace kvm::virtio
