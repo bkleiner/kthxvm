@@ -101,6 +101,7 @@ namespace kvm::virtio {
     void update_rx(queue &q) {
       queue::descriptor_elem_t *next = q.next();
       if (next == nullptr) {
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
         return;
       }
 
@@ -141,6 +142,7 @@ namespace kvm::virtio {
     void update_tx(queue &q) {
       queue::descriptor_elem_t *next = q.next();
       if (next == nullptr) {
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
         return;
       }
 

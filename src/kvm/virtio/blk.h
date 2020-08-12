@@ -77,6 +77,7 @@ namespace kvm::virtio {
       while (true) {
         queue::descriptor_elem_t *next = q().next();
         if (next == nullptr) {
+          std::this_thread::sleep_for(std::chrono::microseconds(10));
           continue;
         }
 
