@@ -41,6 +41,11 @@ namespace kvm::virtio {
       run_thread = std::thread(&blk::run, this);
     }
 
+    ~blk() {
+      should_run = false;
+      run_thread.join();
+    }
+
     std::vector<__u8> read(__u64 offset, __u32 size) {
       std::vector<__u8> buf(size);
 
@@ -74,7 +79,7 @@ namespace kvm::virtio {
     }
 
     void run() {
-      while (true) {
+      while (should_run) {
         queue::descriptor_elem_t *next = q().next();
         if (next == nullptr) {
           std::this_thread::sleep_for(std::chrono::microseconds(10));
@@ -150,6 +155,7 @@ namespace kvm::virtio {
     virtio_blk_config config;
     __u32 generation = 0;
 
+    bool should_run = true;
     std::thread run_thread;
   };
 

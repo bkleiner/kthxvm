@@ -15,6 +15,8 @@ namespace kvm::device {
         , width(width)
         , irq(irq) {}
 
+    virtual ~io_device() {}
+
     bool in_range(__u64 port) {
       return port >= addr && port < (addr + width);
     }

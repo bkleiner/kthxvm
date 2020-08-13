@@ -32,7 +32,8 @@ namespace kvm {
   class vm {
   public:
     vm(kvm &k, int ncpus, size_t mem)
-        : fd(k.create_vm()) {
+        : fd(k.create_vm())
+        , mmio(new virtio::mmio()) {
 
       if (fd < 0)
         throw std::runtime_error("kvm vm create failed");
@@ -46,6 +47,8 @@ namespace kvm {
     }
 
     ~vm() {
+      mmio.reset();
+
       munmap(memory, memory_size);
     }
 
@@ -96,7 +99,7 @@ namespace kvm {
     template <class device_type, typename... arg_types>
     void add_mmio_device(__u64 addr, __u64 width, __u32 interrupt, arg_types &&... args) {
       auto irq = register_irq(interrupt);
-      mmio.add_device<device_type>(addr, width, irq, memory_ptr(), std::forward<arg_types>(args)...);
+      mmio->add_device<device_type>(addr, width, irq, memory_ptr(), std::forward<arg_types>(args)...);
     }
 
     void handle_io_device(kvm_run *kvm_run, device::io_device &dev) {
@@ -179,12 +182,12 @@ namespace kvm {
           break;
         case KVM_EXIT_MMIO: {
           if (!kvm_run->mmio.is_write) {
-            auto buf = mmio.read(kvm_run->mmio.phys_addr, kvm_run->mmio.len);
+            auto buf = mmio->read(kvm_run->mmio.phys_addr, kvm_run->mmio.len);
             memcpy(kvm_run->mmio.data, buf.data(), buf.size());
           } else {
-            mmio.write(&kvm_run->mmio.data[0], kvm_run->mmio.phys_addr, kvm_run->mmio.len);
+            mmio->write(&kvm_run->mmio.data[0], kvm_run->mmio.phys_addr, kvm_run->mmio.len);
           }
-          mmio.update(memory_ptr());
+          mmio->update(memory_ptr());
           break;
         }
         case KVM_EXIT_DEBUG:
@@ -195,6 +198,7 @@ namespace kvm {
               kvm_run->debug.arch.dr7,
               kvm_run->debug.arch.pc);
           break;
+        case KVM_EXIT_SHUTDOWN:
         case KVM_EXIT_HLT:
           fmt::print("kvm::vcpu halted\n");
           return 0;
@@ -317,7 +321,7 @@ namespace kvm {
     std::unique_ptr<vcpu> cpu;
     std::vector<std::unique_ptr<device::io_device>> io_devices;
 
-    virtio::mmio mmio;
+    std::unique_ptr<virtio::mmio> mmio;
   };
 
   void setup_bootparams(vm &vm, const std::string cmdline) {

@@ -23,6 +23,8 @@ namespace kvm::virtio {
     device(::kvm::interrupt *irq)
         : irq(irq) {}
 
+    virtual ~device() {}
+
     virtual std::vector<__u8> read(__u64 offset, __u32 size) = 0;
     virtual void write(__u8 *data, __u64 offset, __u32 size) = 0;
 
@@ -69,6 +71,12 @@ namespace kvm::virtio {
         : device(irq) {
       for (size_t i = 0; i < queue_count; i++) {
         queues[i] = std::make_unique<queue>(ptr);
+      }
+    }
+
+    virtual ~queue_device() {
+      for (auto &q : queues) {
+        q.reset();
       }
     }
 

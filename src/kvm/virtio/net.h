@@ -61,6 +61,12 @@ namespace kvm::virtio {
       run_rx_thread = std::thread(&net::run_rx, this);
     }
 
+    ~net() {
+      should_run = false;
+      run_tx_thread.join();
+      run_rx_thread.join();
+    }
+
     std::vector<__u8> read(__u64 offset, __u32 size) {
       std::vector<__u8> buf(size);
 
@@ -105,7 +111,7 @@ namespace kvm::virtio {
         return;
       }
 
-      if (!::kvm::poll_fd_in(tap, -1)) {
+      if (!::kvm::poll_fd_in(tap, 100)) {
         return;
       }
 
@@ -188,19 +194,18 @@ namespace kvm::virtio {
     }
 
     void run_rx() {
-      while (true) {
+      while (should_run) {
         update_rx(q(rx_queue));
       }
     }
 
     void run_tx() {
-      while (true) {
+      while (should_run) {
         update_tx(q(tx_queue));
       }
     }
 
     void update(__u8 *ptr) {
-
       //update_ctrl(ptr, q(ctrl_queue));
     }
 
@@ -238,6 +243,8 @@ namespace kvm::virtio {
     __u32 generation = 0;
 
     const __u8 default_mac[6] = {0x02, 0x15, 0x15, 0x15, 0x15, 0x15};
+
+    bool should_run = true;
 
     std::thread run_tx_thread;
     std::thread run_rx_thread;

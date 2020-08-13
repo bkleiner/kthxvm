@@ -19,6 +19,8 @@ namespace kvm::virtio {
     mmio_device(__u64 addr, __u64 width, ::kvm::interrupt *irq)
         : ::kvm::device::io_device(addr, width, irq) {}
 
+    virtual ~mmio_device() {}
+
     virtual void update(__u8 *ptr) = 0;
   };
 
@@ -33,6 +35,8 @@ namespace kvm::virtio {
         : mmio_device(addr, width, irq)
         , dev(irq, ptr, std::forward<arg_types>(args)...) {
     }
+
+    virtual ~mmio_device_holder() {}
 
     std::vector<__u8> read(__u64 offset, __u32 size) {
       std::vector<__u8> buf(size);
@@ -199,6 +203,12 @@ namespace kvm::virtio {
 
   class mmio {
   public:
+    virtual ~mmio() {
+      for (auto &d : devices) {
+        d.reset();
+      }
+    }
+
     std::vector<__u8> read(__u64 offset, __u32 size) {
       for (auto &dev : devices) {
         if (dev->in_range(offset)) {
