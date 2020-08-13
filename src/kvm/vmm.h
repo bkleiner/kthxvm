@@ -55,7 +55,7 @@ namespace kvm {
         vm.get_vcpu(i).set_cpuid2(cpuid2);
       }
 
-      int entry = elf::load(vm.memory_ptr(), kernel);
+      __u64 entry = elf::load(vm.memory_ptr(), kernel);
 
       setup_irq_routing(vm);
 

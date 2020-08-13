@@ -12,7 +12,7 @@
 #include <fmt/format.h>
 
 namespace elf {
-  int load(__u8 *memory, const std::string &filename) {
+  __u64 load(__u8 *memory, const std::string &filename) {
     std::ifstream file(filename);
     if (!file.is_open())
       throw std::runtime_error(fmt::format("could not open file {}", filename));
