@@ -14,8 +14,8 @@ namespace kvm {
     return (((reg) & !0x700) | ((mode) << 8));
   }
 
-  void setup_lapic(vm &vm) {
-    auto lapic = vm.get_vcpu().get_lapic();
+  void setup_lapic(vcpu &cpu) {
+    auto lapic = cpu.get_lapic();
 
     __u32 *lvt_lint0 = reinterpret_cast<__u32 *>(lapic.regs + APIC_LVT0);
     *lvt_lint0 = apic_delivery_mode(*lvt_lint0, APIC_MODE_EXTINT);
@@ -23,6 +23,6 @@ namespace kvm {
     __u32 *lvt_lint1 = reinterpret_cast<__u32 *>(lapic.regs + APIC_LVT1);
     *lvt_lint1 = apic_delivery_mode(*lvt_lint1, APIC_MODE_NMI);
 
-    vm.get_vcpu().set_lapic(lapic);
+    cpu.set_lapic(lapic);
   }
 } // namespace kvm

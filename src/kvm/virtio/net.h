@@ -112,6 +112,7 @@ namespace kvm::virtio {
       }
 
       if (!::kvm::poll_fd_in(tap, 100)) {
+        q.pop_back();
         return;
       }
 

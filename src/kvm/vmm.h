@@ -30,6 +30,7 @@ namespace kvm {
 
   class vmm {
   public:
+    static constexpr __u64 CPU_COUNT = 2;
     static constexpr __u64 MEMORY_SIZE_MB = 4 * 1024ul;
     static constexpr __u64 MB_SHIFT = (20);
 
@@ -37,7 +38,7 @@ namespace kvm {
         : run_terminal(true)
         , kvm()
         , term()
-        , vm(kvm, 1, MEMORY_SIZE_MB << MB_SHIFT) {}
+        , vm(kvm, CPU_COUNT, MEMORY_SIZE_MB << MB_SHIFT) {}
 
     int start(std::string kernel, std::string disk) {
       std::string cmdline = "console=ttyS0";
@@ -50,18 +51,24 @@ namespace kvm {
 
       auto cpuid2 = kvm.get_supported_cpuid(MAX_KVM_CPUID_ENTRIES);
       filter_cpuid_copy(cpuid2);
-      vm.get_vcpu().set_cpuid2(cpuid2);
+      for (size_t i = 0; i < CPU_COUNT; i++) {
+        vm.get_vcpu(i).set_cpuid2(cpuid2);
+      }
 
       int entry = elf::load(vm.memory_ptr(), kernel);
 
-      setup_msrs(vm);
-      setup_regs(vm, entry, BOOT_STACK_POINTER, ZERO_PAGE_START);
-      setup_fpu(vm);
-      setup_long_mode(vm);
-      setup_lapic(vm);
       setup_irq_routing(vm);
+
+      for (size_t i = 0; i < CPU_COUNT; i++) {
+        setup_msrs(vm.get_vcpu(i));
+        setup_fpu(vm.get_vcpu(i));
+        setup_lapic(vm.get_vcpu(i));
+      }
+
+      setup_regs(vm.get_vcpu(0), entry, BOOT_STACK_POINTER, ZERO_PAGE_START);
+      setup_long_mode(vm, vm.get_vcpu(0));
       setup_bootparams(vm, cmdline);
-      setup_mptable(vm);
+      setup_mptable(vm, CPU_COUNT);
 
       // keyboard
       vm.add_io_device<device::i8042>(0x60, 5, 1);
@@ -75,10 +82,20 @@ namespace kvm {
       vm.add_mmio_device<virtio::rng>(0xd0001000, 0x1000, 13);
       vm.add_mmio_device<virtio::net>(0xd0002000, 0x1000, 14);
 
-      std::thread vm_thread(&vm::run, &vm, false);
+      std::array<std::thread, CPU_COUNT> vm_threads;
+      for (size_t i = 0; i < CPU_COUNT; i++) {
+        vm_threads[i] = std::thread(&vm::run_cpu, &vm, i, false);
+      }
+
       std::thread terminal_thread(&vmm::read_terminal, this);
 
-      vm_thread.join();
+      vm_threads[0].join();
+      vm.stop();
+
+      for (size_t i = 1; i < CPU_COUNT; i++) {
+        vm_threads[i].join();
+      }
+
       run_terminal = false;
       terminal_thread.join();
 

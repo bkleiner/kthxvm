@@ -43,10 +43,15 @@ namespace kvm {
       create_memory(mem);
       create_irq_chip();
       create_pit();
-      create_vcpu(k);
+
+      for (size_t i = 0; i < ncpus; i++) {
+        cpus.emplace_back(create_vcpu(k, i));
+      }
     }
 
     ~vm() {
+      should_run = false;
+
       mmio.reset();
 
       munmap(memory, memory_size);
@@ -56,8 +61,8 @@ namespace kvm {
       return memory;
     }
 
-    vcpu &get_vcpu() {
-      return *cpu;
+    vcpu &get_vcpu(size_t index) {
+      return *cpus[index];
     }
 
     void set_gsi_routing(struct kvm_irq_routing *router) {
@@ -123,9 +128,9 @@ namespace kvm {
       }
     }
 
-    int run(bool single_step = false) {
-      while (true) {
-        auto kvm_run = cpu->run(single_step);
+    int run_cpu(size_t index, bool single_step = false) {
+      while (should_run) {
+        auto kvm_run = get_vcpu(index).run(single_step);
 
         switch (kvm_run->exit_reason) {
         case KVM_EXIT_IO:
@@ -217,6 +222,10 @@ namespace kvm {
       return memory_size;
     }
 
+    void stop() {
+      should_run = false;
+    }
+
   private:
     void create_memory(size_t mem) {
       memory_size = mem;
@@ -285,10 +294,10 @@ namespace kvm {
         ioctl_err("KVM_CREATE_PIT2");
     }
 
-    void create_vcpu(kvm &k) {
+    std::unique_ptr<vcpu> create_vcpu(kvm &k, size_t index) {
       int vcpu_mmap_size = k.vcpu_mmap_size();
-      int vcpu_fd = ioctl(fd, KVM_CREATE_VCPU, 0);
-      cpu = std::make_unique<vcpu>(vcpu_fd, vcpu_mmap_size);
+      int vcpu_fd = ioctl(fd, KVM_CREATE_VCPU, index);
+      return std::make_unique<vcpu>(vcpu_fd, vcpu_mmap_size);
     }
 
     ::kvm::interrupt *register_irq(__u32 num) {
@@ -316,9 +325,11 @@ namespace kvm {
     __u8 *memory;
     __u64 memory_size;
 
+    bool should_run = true;
+
     std::array<std::unique_ptr<::kvm::interrupt>, 32> interrupts;
 
-    std::unique_ptr<vcpu> cpu;
+    std::vector<std::unique_ptr<vcpu>> cpus;
     std::vector<std::unique_ptr<device::io_device>> io_devices;
 
     std::unique_ptr<virtio::mmio> mmio;

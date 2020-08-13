@@ -4,7 +4,7 @@
 #include "kvm.h"
 
 namespace kvm {
-  void setup_msrs(vm &v) {
+  void setup_msrs(vcpu &cpu) {
     std::vector<struct kvm_msr_entry> entries;
 
     entries.emplace_back(kvm_msr_entry{MSR_IA32_SYSENTER_CS, 0, 0x0});
@@ -28,6 +28,6 @@ namespace kvm {
     memcpy(buf.data() + sizeof(kvm_msrs), entries.data(), entries.size() * sizeof(kvm_msr_entry));
     msrs->nmsrs = entries.size();
 
-    v.get_vcpu().set_msrs(msrs);
+    cpu.set_msrs(msrs);
   }
 } // namespace kvm

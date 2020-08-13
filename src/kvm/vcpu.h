@@ -84,13 +84,17 @@ namespace kvm {
         if (ioctl(fd, KVM_SET_GUEST_DEBUG, &debug) < 0)
           ioctl_err("KVM_SET_GUEST_DEBUG");
       }
-
-      if (ioctl(fd, KVM_RUN, 0) < 0)
-        if (errno != 4) {
+    retry_label:
+      if (ioctl(fd, KVM_RUN, 0) < 0) {
+        if (errno == 11) {
+          ioctl_warn("KVM_RUN");
+          goto retry_label;
+        } else if (errno != 4) {
           ioctl_err("KVM_RUN");
         } else {
           ioctl_warn("KVM_RUN");
         }
+      }
 
       return kvm_run;
     }

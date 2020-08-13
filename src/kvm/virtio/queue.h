@@ -67,11 +67,9 @@ namespace kvm::virtio {
     }
 
     descriptor_elem_t *next() {
-      {
-        const std::lock_guard<std::mutex> lock(mu);
-        if (!ready) {
-          return nullptr;
-        }
+      const std::lock_guard<std::mutex> lock(mu);
+      if (!ready) {
+        return nullptr;
       }
 
       rmb();
@@ -82,7 +80,14 @@ namespace kvm::virtio {
       return &desc()->ring[avail_id()];
     }
 
+    void pop_back() {
+      const std::lock_guard<std::mutex> lock(mu);
+      last_avail--;
+    }
+
     __u16 add_used(__u32 start, __u32 len) {
+      const std::lock_guard<std::mutex> lock(mu);
+
       wmb();
       used()->ring[used()->idx % size].len = len;
       used()->ring[used()->idx % size].id = start;

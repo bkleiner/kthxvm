@@ -6,8 +6,8 @@
 #include "layout.h"
 
 namespace kvm {
-  static void setup_long_mode(vm &v) {
-    struct kvm_sregs sregs = v.get_vcpu().get_sregs();
+  static void setup_long_mode(vm &v, vcpu &cpu) {
+    struct kvm_sregs sregs = cpu.get_sregs();
 
     __u64 pml4_addr = PML4_START;
     __u64 *pml4 = (__u64 *)(v.memory_ptr() + pml4_addr);
@@ -51,10 +51,10 @@ namespace kvm {
     sregs.ss = data_seg;
     sregs.tr = tss_seg;
 
-    v.get_vcpu().set_sreg(sregs);
+    cpu.set_sreg(sregs);
   }
 
-  static void setup_regs(vm &v, __u64 rip, __u64 rsp, __u64 rsi) {
+  static void setup_regs(vcpu &cpu, __u64 rip, __u64 rsp, __u64 rsi) {
     struct kvm_regs regs;
     memset(&regs, 0, sizeof(regs));
     regs.rflags = 0x2;
@@ -62,14 +62,14 @@ namespace kvm {
     regs.rsp = rsp; // stack
     regs.rsi = rsi; // boot_params
 
-    v.get_vcpu().set_regs(regs);
+    cpu.set_regs(regs);
   }
 
-  static void setup_fpu(vm &v) {
+  static void setup_fpu(vcpu &cpu) {
     struct kvm_fpu fpu {
       fcw : 0x37f,
           mxcsr : 0x1f80,
     };
-    v.get_vcpu().set_fpu(fpu);
+    cpu.set_fpu(fpu);
   }
 } // namespace kvm
